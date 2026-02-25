@@ -25,8 +25,6 @@ const MAX_PLAYERS = 16;
 const REGION = "INW OR ASIA";
 const BANNER_URL = "https://cdn.discordapp.com/attachments/1415778886285000876/1467953312702922960/Event_Background_EventDash.png?ex=69a0940f&is=699f428f&hm=5d8bc";
 
-/* ================= TOURNAMENT DATA ================= */
-
 function resetTournament() {
   return {
     mode: null,
@@ -50,17 +48,15 @@ function isAdmin(member) {
 
 function buildEmbed() {
   return new EmbedBuilder()
-    .setColor("#2b2d31")
-    .setTitle("🏆 Tour 1")
+    .setColor("#00ff88")
+    .setTitle("🏆 ShinCups Tournament")
     .setDescription(`
-👥 **Players:** ${tournament.players.length}/${MAX_PLAYERS}
+🔥 **Mode:** ${tournament.mode ? tournament.mode.toUpperCase() : "Not Selected"}
+👥 **Registered:** ${tournament.players.length}/${MAX_PLAYERS}
+🏁 **Status:** ${tournament.started ? "Started" : "Waiting"}
 🌍 **Region:** ${REGION}
-🎯 **Mode:** ${tournament.mode ? tournament.mode.toUpperCase() : "Not Selected"}
-
-Click below to register.
 `)
-    .setImage(BANNER_URL)
-    .setFooter({ text: "SHINcups1" });
+    .setImage(BANNER_URL);
 }
 
 function buildButtons() {
@@ -74,11 +70,13 @@ function buildButtons() {
         tournament.players.length >= MAX_PLAYERS ||
         tournament.mode !== "1v1"
       ),
+
     new ButtonBuilder()
       .setCustomId("unregister")
       .setLabel("Unregister")
       .setStyle(ButtonStyle.Danger)
       .setDisabled(tournament.started),
+
     new ButtonBuilder()
       .setCustomId("start")
       .setLabel("Start")
@@ -101,7 +99,11 @@ function createMatches(teams) {
 
 function generateNextRound(channel) {
   if (tournament.winners.length === 1) {
-    channel.send(`🏆 **Champion:** ${tournament.winners[0].map(id => `<@${id}>`).join(" & ")}`);
+    channel.send(
+      `🏆 **Champion:** ${tournament.winners[0]
+        .map(id => `<@${id}>`)
+        .join(" & ")}`
+    );
     tournament.started = false;
     return;
   }
@@ -115,7 +117,11 @@ function generateNextRound(channel) {
 
   tournament.matches.forEach((match, i) => {
     channel.send(
-      `Match ${i + 1}: ${match.team1.map(id => `<@${id}>`).join(" & ")} vs ${match.team2.map(id => `<@${id}>`).join(" & ")}`
+      `Match ${i + 1}: ${match.team1
+        .map(id => `<@${id}>`)
+        .join(" & ")} vs ${match.team2
+        .map(id => `<@${id}>`)
+        .join(" & ")}`
     );
   });
 }
@@ -123,7 +129,7 @@ function generateNextRound(channel) {
 /* ================= READY ================= */
 
 client.once("ready", () => {
-  console.log(`${client.user.tag} online.`);
+  console.log(`${client.user.tag} is online.`);
 });
 
 /* ================= COMMANDS ================= */
@@ -134,10 +140,20 @@ client.on("messageCreate", async (msg) => {
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
-  /* CREATE TOURNAMENT */
+  /* ===== CREATE TOURNAMENT (NO DUPLICATE FIX) ===== */
 
   if (["1v1", "2v2", "3v3"].includes(cmd)) {
     if (!isAdmin(msg.member)) return msg.reply("Admin only.");
+
+    // delete old panel if exists
+    if (tournament.messageId) {
+      try {
+        const oldMsg = await msg.channel.messages.fetch(
+          tournament.messageId
+        );
+        await oldMsg.delete();
+      } catch (err) {}
+    }
 
     tournament = resetTournament();
     tournament.mode = cmd;
@@ -150,7 +166,7 @@ client.on("messageCreate", async (msg) => {
     tournament.messageId = sent.id;
   }
 
-  /* TEAM REGISTER */
+  /* ===== TEAM REGISTRATION ===== */
 
   if (cmd === "team") {
     if (!["2v2", "3v3"].includes(tournament.mode))
@@ -171,19 +187,26 @@ client.on("messageCreate", async (msg) => {
     tournament.players.push(...team);
     tournament.teams.push(team);
 
-    const message = await msg.channel.messages.fetch(tournament.messageId);
-    await message.edit({ embeds: [buildEmbed()], components: [buildButtons()] });
+    const message = await msg.channel.messages.fetch(
+      tournament.messageId
+    );
+    await message.edit({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
 
     msg.reply("Team Registered!");
   }
 
-  /* WIN REPORT */
+  /* ===== WIN REPORT ===== */
 
   if (cmd === "win") {
     const mention = msg.mentions.users.first();
     if (!mention) return msg.reply("Mention winner.");
 
-    const team = tournament.teams.find(t => t.includes(mention.id));
+    const team = tournament.teams.find(t =>
+      t.includes(mention.id)
+    );
     if (!team) return msg.reply("Player not found.");
 
     tournament.winners.push(team);
@@ -193,7 +216,7 @@ client.on("messageCreate", async (msg) => {
     }
   }
 
-  /* ================= DM CODE SYSTEM ================= */
+  /* ===== DM CODE SYSTEM ===== */
 
   if (cmd === "code") {
     if (!isAdmin(msg.member)) return msg.reply("Admin only.");
@@ -208,16 +231,20 @@ client.on("messageCreate", async (msg) => {
     if (!code) return msg.reply("Provide code.");
     if (!mention) return msg.reply("Mention player.");
 
-    const team = tournament.teams.find(t => t.includes(mention.id));
+    const team = tournament.teams.find(t =>
+      t.includes(mention.id)
+    );
     if (!team) return msg.reply("Team not found.");
 
     for (const id of team) {
       const user = await client.users.fetch(id);
-      await user.send(`
-🎮 Match Code: **${code}**
+      await user
+        .send(
+          `🎮 Match Code: **${code}**
 🏆 Mode: ${mode.toUpperCase()}
-🔥 Good Luck!
-      `).catch(() => {});
+🔥 Good Luck!`
+        )
+        .catch(() => {});
     }
 
     msg.delete().catch(() => {});
@@ -227,44 +254,80 @@ client.on("messageCreate", async (msg) => {
 
 /* ================= BUTTONS ================= */
 
-client.on("interactionCreate", async (interaction) => {
+client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
 
-  const message = await interaction.channel.messages.fetch(tournament.messageId);
+  const message = await interaction.channel.messages.fetch(
+    tournament.messageId
+  );
 
   if (interaction.customId === "register") {
     if (tournament.players.includes(interaction.user.id))
-      return interaction.reply({ content: "Already registered.", ephemeral: true });
+      return interaction.reply({
+        content: "Already registered.",
+        ephemeral: true
+      });
 
     tournament.players.push(interaction.user.id);
     tournament.teams.push([interaction.user.id]);
 
-    await message.edit({ embeds: [buildEmbed()], components: [buildButtons()] });
+    await message.edit({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
+
     interaction.reply({ content: "Registered!", ephemeral: true });
   }
 
   if (interaction.customId === "unregister") {
-    tournament.players = tournament.players.filter(p => p !== interaction.user.id);
-    tournament.teams = tournament.teams.filter(t => !t.includes(interaction.user.id));
+    tournament.players = tournament.players.filter(
+      p => p !== interaction.user.id
+    );
+    tournament.teams = tournament.teams.filter(
+      t => !t.includes(interaction.user.id)
+    );
 
-    await message.edit({ embeds: [buildEmbed()], components: [buildButtons()] });
-    interaction.reply({ content: "Unregistered.", ephemeral: true });
+    await message.edit({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
+
+    interaction.reply({
+      content: "Unregistered.",
+      ephemeral: true
+    });
   }
 
   if (interaction.customId === "start") {
     if (!isAdmin(interaction.member))
-      return interaction.reply({ content: "Admin only.", ephemeral: true });
+      return interaction.reply({
+        content: "Admin only.",
+        ephemeral: true
+      });
+
+    if (tournament.teams.length < 2)
+      return interaction.reply({
+        content: "Not enough teams.",
+        ephemeral: true
+      });
 
     tournament.started = true;
     tournament.matches = createMatches(tournament.teams);
 
-    await message.edit({ embeds: [buildEmbed()], components: [buildButtons()] });
+    await message.edit({
+      embeds: [buildEmbed()],
+      components: [buildButtons()]
+    });
 
     interaction.reply("🔥 Tournament Started!");
 
     tournament.matches.forEach((match, i) => {
       interaction.channel.send(
-        `Match ${i + 1}: ${match.team1.map(id => `<@${id}>`).join(" & ")} vs ${match.team2.map(id => `<@${id}>`).join(" & ")}`
+        `Match ${i + 1}: ${match.team1
+          .map(id => `<@${id}>`)
+          .join(" & ")} vs ${match.team2
+          .map(id => `<@${id}>`)
+          .join(" & ")}`
       );
     });
   }
