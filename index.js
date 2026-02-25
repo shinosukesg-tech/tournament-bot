@@ -68,11 +68,17 @@ client.on("interactionCreate", async (interaction) => {
       tournament.matches = [];
 
       const embed = new EmbedBuilder()
-        .setTitle(`🏆 ${tournament.name}`)
-        .setDescription(
-          `👥 Players: 0/16\n🌍 Region: EU\n🎯 Mode: 1v1\n\nClick below to register.`
-        )
-        .setColor("Gold");
+  .setTitle(`🏆 ${tournament.name}`)
+  .setDescription(
+    `👥 Players: 0/16
+🌍 Region: INW OR ASIA
+🎯 Mode: 1v1
+
+Click below to register.`
+  )
+  .setColor("Gold")
+  .setImage("https://cdn.discordapp.com/attachments/1471952333209604239/1476249775681835169/brave_screenshot_discord.com.png")
+  .setFooter({ text: "SHINcups1" });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -160,5 +166,6 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 });
+
 
 client.login(process.env.TOKEN);
