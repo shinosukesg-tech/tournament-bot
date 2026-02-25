@@ -1,345 +1,168 @@
-const {
-  Client,
-  GatewayIntentBits,
-  EmbedBuilder,
-  SlashCommandBuilder,
-  REST,
-  Routes
-} = require("discord.js");
-
-const TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const PREFIX = ";";
-
-const BANNER =
-  "https://cdn.discordapp.com/attachments/1471952333209604239/1476249775681835169/brave_screenshot_discord.com.png";
+const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
+  ],
 });
+
+const prefix = ";";
+
+const IMAGE_URL =
+  "https://cdn.discordapp.com/attachments/1471952333209604239/1476249775681835169/brave_screenshot_discord.com.png?ex=69a0703d&is=699f1ebd&hm=6d406c9e0afc71eaa13d789fad08e88caa8c0010007afd9aa307f20959895aaa";
 
 let tournament = {
+  active: false,
   mode: null,
-  teams: [],
-  matches: [],
-  started: false,
-  round: 1
+  players: [],
+  winners: [],
 };
 
-function resetTournament() {
-  tournament = {
-    mode: null,
-    teams: [],
-    matches: [],
-    started: false,
-    round: 1
-  };
-}
-
-function createEmbed(title, description, color = "Gold", fields = []) {
-  return new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(description)
-    .addFields(fields)
-    .setColor(color)
-    .setImage(BANNER);
-}
-
-function generateMatches() {
-  const shuffled = [...tournament.teams].sort(() => 0.5 - Math.random());
-  tournament.matches = [];
-
-  for (let i = 0; i < shuffled.length; i += 2) {
-    tournament.matches.push({
-      t1: shuffled[i],
-      t2: shuffled[i + 1] || { name: "BYE" },
-      winner: null
-    });
-  }
-}
-
-function sendRound(channel) {
-  let text = "";
-  tournament.matches.forEach((m, i) => {
-    text += `Match ${i + 1}: ${m.t1.name} vs ${m.t2.name}\n`;
-  });
-
-  channel.send({
-    embeds: [
-      createEmbed(`🏆 Round ${tournament.round}`, text, "Gold", [
-        { name: "🎮 Mode", value: tournament.mode, inline: true },
-        { name: "👥 Teams Remaining", value: `${tournament.teams.length}`, inline: true }
-      ])
-    ]
-  });
-}
-
-function checkRoundComplete(channel) {
-  if (!tournament.matches.every(m => m.winner)) return;
-
-  const winners = tournament.matches.map(m =>
-    tournament.teams.find(t => t.name === m.winner)
-  );
-
-  if (winners.length === 1) {
-    channel.send({
-      embeds: [
-        createEmbed(
-          "🏆 TOURNAMENT CHAMPION 🏆",
-          `👑 **${winners[0].name}** wins the tournament!`,
-          "Purple",
-          [
-            { name: "🎮 Mode", value: tournament.mode, inline: true },
-            { name: "🏁 Total Rounds", value: `${tournament.round}`, inline: true }
-          ]
-        )
-      ]
-    });
-
-    return resetTournament();
-  }
-
-  tournament.round++;
-  tournament.teams = winners;
-  generateMatches();
-  sendRound(channel);
-}
-
-function registerTeam(mode, players, channel) {
-  if (tournament.started) return channel.send("Tournament already started.");
-
-  if (!tournament.mode) tournament.mode = mode;
-  if (tournament.mode !== mode)
-    return channel.send(`Tournament already set to ${tournament.mode}`);
-
-  const required =
-    mode === "1v1" ? 1 : mode === "2v2" ? 2 : 3;
-
-  if (players.length !== required)
-    return channel.send(`You must provide ${required} players.`);
-
-  for (const team of tournament.teams) {
-    for (const p of players) {
-      if (team.players.includes(p.id))
-        return channel.send("One of these players is already registered.");
-    }
-  }
-
-  const teamName = players.map(p => p.username).join(" & ");
-
-  tournament.teams.push({
-    name: teamName,
-    players: players.map(p => p.id)
-  });
-
-  channel.send({
-    embeds: [
-      createEmbed("🎫 Team Registered", `**${teamName}** joined!`, "Green", [
-        { name: "🎮 Mode", value: tournament.mode, inline: true },
-        { name: "👥 Total Teams", value: `${tournament.teams.length}`, inline: true }
-      ])
-    ]
-  });
-}
-
-/* =========================
-   SLASH COMMAND REGISTRATION
-========================= */
-
-const slashCommands = [
-  new SlashCommandBuilder()
-    .setName("tournament")
-    .setDescription("Register a tournament team")
-    .addStringOption(o =>
-      o.setName("mode")
-        .setDescription("Choose 1v1, 2v2 or 3v3")
-        .setRequired(true)
-        .addChoices(
-          { name: "1v1", value: "1v1" },
-          { name: "2v2", value: "2v2" },
-          { name: "3v3", value: "3v3" }
-        )
-    )
-    .addUserOption(o =>
-      o.setName("player1")
-        .setDescription("First player")
-        .setRequired(true)
-    )
-    .addUserOption(o =>
-      o.setName("player2")
-        .setDescription("Second player")
-        .setRequired(false)
-    )
-    .addUserOption(o =>
-      o.setName("player3")
-        .setDescription("Third player")
-        .setRequired(false)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("players")
-    .setDescription("View registered teams"),
-
-  new SlashCommandBuilder()
-    .setName("start")
-    .setDescription("Start the tournament"),
-
-  new SlashCommandBuilder()
-    .setName("report")
-    .setDescription("Report a match winner")
-    .addIntegerOption(o =>
-      o.setName("match")
-        .setDescription("Match number")
-        .setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("winner")
-        .setDescription("Winning team name")
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("rematch")
-    .setDescription("Reset a match")
-    .addIntegerOption(o =>
-      o.setName("match")
-        .setDescription("Match number")
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("end")
-    .setDescription("End and reset tournament")
-].map(cmd => cmd.toJSON());
-
-client.once("ready", async () => {
+client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
-
-  await rest.put(
-    Routes.applicationCommands(CLIENT_ID),
-    { body: slashCommands }
-  );
-
-  console.log("✅ Slash commands registered.");
 });
 
-/* =========================
-   PREFIX COMMANDS
-========================= */
+client.on("messageCreate", async (message) => {
+  if (!message.content.startsWith(prefix) || message.author.bot) return;
 
-client.on("messageCreate", message => {
-  if (message.author.bot) return;
-  if (!message.content.startsWith(PREFIX)) return;
+  const args = message.content.slice(prefix.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
 
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
-
-  if (cmd === "tournament") {
+  // CREATE TOURNAMENT
+  if (command === "tournament") {
     const mode = args[0];
-    const players = [...message.mentions.users.values()];
-    return registerTeam(mode, players, message.channel);
+
+    if (!["1v1", "2v2", "3v3"].includes(mode))
+      return message.reply("❌ Use: ;tournament 1v1 / 2v2 / 3v3");
+
+    tournament = {
+      active: true,
+      mode: mode,
+      players: [],
+      winners: [],
+    };
+
+    return message.channel.send(
+      `🔥 **${mode} Tournament Created!**\nType ;join to participate.`
+    );
   }
 
-  if (cmd === "players") {
-    if (!tournament.teams.length) return message.reply("No teams.");
-    const list = tournament.teams.map((t,i)=>`${i+1}. ${t.name}`).join("\n");
-    return message.channel.send({ embeds: [createEmbed("👥 Teams", list, "Blue")]});
+  // JOIN
+  if (command === "join") {
+    if (!tournament.active)
+      return message.reply("❌ No active tournament.");
+
+    if (tournament.players.includes(message.author.id))
+      return message.reply("⚠ You already joined.");
+
+    tournament.players.push(message.author.id);
+
+    return message.channel.send(
+      `✅ ${message.author} joined!\n👥 Total Players: ${tournament.players.length}`
+    );
   }
 
-  if (cmd === "start") {
-    if (tournament.teams.length < 2)
-      return message.reply("Not enough teams.");
-    tournament.started = true;
-    tournament.round = 1;
-    generateMatches();
-    return sendRound(message.channel);
+  // PLAYERS
+  if (command === "players") {
+    if (!tournament.active)
+      return message.reply("❌ No active tournament.");
+
+    const playerList = tournament.players
+      .map((id) => `<@${id}>`)
+      .join("\n");
+
+    return message.channel.send(
+      `👥 **Players (${tournament.players.length})**\n${playerList || "None"}`
+    );
   }
 
-  if (cmd === "report") {
-    const matchNum = parseInt(args[0]);
-    const winner = args.slice(1).join(" ");
-    const match = tournament.matches[matchNum - 1];
-    if (!match) return message.reply("Invalid match.");
-    match.winner = winner;
-    return checkRoundComplete(message.channel);
+  // START
+  if (command === "start") {
+    if (!tournament.active)
+      return message.reply("❌ No active tournament.");
+
+    if (tournament.players.length < 2)
+      return message.reply("❌ Not enough players.");
+
+    const embed = new EmbedBuilder()
+      .setTitle("🏆 Tournament Started!")
+      .setDescription(
+        `Mode: ${tournament.mode}\nPlayers: ${tournament.players.length}`
+      )
+      .setImage(IMAGE_URL)
+      .setColor("Blue");
+
+    return message.channel.send({ embeds: [embed] });
   }
 
-  if (cmd === "rematch") {
-    const matchNum = parseInt(args[0]);
-    const match = tournament.matches[matchNum - 1];
-    if (!match) return message.reply("Invalid match.");
-    match.winner = null;
-    return message.channel.send("🔁 Match reset.");
+  // CODE SYSTEM
+  if (command === "code") {
+    const mode = args[0];
+    const mentions = message.mentions.users;
+
+    if (!["1v1", "2v2", "3v3"].includes(mode))
+      return message.reply("❌ Use: ;code 1v1 @player");
+
+    if (mode === "1v1" && mentions.size !== 1)
+      return message.reply("❌ 1v1 needs 1 opponent.");
+
+    if (mode === "2v2" && mentions.size !== 2)
+      return message.reply("❌ 2v2 needs 2 players.");
+
+    if (mode === "3v3" && mentions.size !== 3)
+      return message.reply("❌ 3v3 needs 3 players.");
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🎮 Match Code Created (${mode})`)
+      .setDescription(
+        `Host: ${message.author}\nPlayers:\n${[
+          message.author,
+          ...mentions.values(),
+        ]
+          .map((u) => u.toString())
+          .join("\n")}`
+      )
+      .setImage(IMAGE_URL)
+      .setColor("Green");
+
+    return message.channel.send({ embeds: [embed] });
   }
 
-  if (cmd === "end") {
-    resetTournament();
-    return message.channel.send("🏁 Tournament reset.");
+  // WINNER
+  if (command === "winner") {
+    const winner = message.mentions.users.first();
+    if (!winner) return message.reply("❌ Mention the winner.");
+
+    tournament.winners.push(winner.id);
+
+    const embed = new EmbedBuilder()
+      .setTitle("🏆 Match Winner!")
+      .setDescription(`🎉 Congratulations ${winner}!`)
+      .setImage(IMAGE_URL)
+      .setColor("Gold");
+
+    return message.channel.send({ embeds: [embed] });
+  }
+
+  // REMATCH
+  if (command === "rematch") {
+    return message.channel.send("🔁 Rematch requested! Get ready!");
+  }
+
+  // END
+  if (command === "end") {
+    tournament = {
+      active: false,
+      mode: null,
+      players: [],
+      winners: [],
+    };
+
+    return message.channel.send("🛑 Tournament ended.");
   }
 });
 
-/* =========================
-   SLASH COMMAND HANDLER
-========================= */
-
-client.on("interactionCreate", async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === "tournament") {
-    const mode = interaction.options.getString("mode");
-    const players = [
-      interaction.options.getUser("player1"),
-      interaction.options.getUser("player2"),
-      interaction.options.getUser("player3")
-    ].filter(Boolean);
-
-    registerTeam(mode, players, interaction.channel);
-    return interaction.reply({ content: "Team registered.", ephemeral: true });
-  }
-
-  if (interaction.commandName === "players") {
-    if (!tournament.teams.length)
-      return interaction.reply("No teams.");
-    const list = tournament.teams.map((t,i)=>`${i+1}. ${t.name}`).join("\n");
-    return interaction.reply({ embeds: [createEmbed("👥 Teams", list, "Blue")]});
-  }
-
-  if (interaction.commandName === "start") {
-    tournament.started = true;
-    tournament.round = 1;
-    generateMatches();
-    sendRound(interaction.channel);
-    return interaction.reply({ content: "Tournament started.", ephemeral: true });
-  }
-
-  if (interaction.commandName === "report") {
-    const matchNum = interaction.options.getInteger("match");
-    const winner = interaction.options.getString("winner");
-    const match = tournament.matches[matchNum - 1];
-    if (!match) return interaction.reply("Invalid match.");
-    match.winner = winner;
-    checkRoundComplete(interaction.channel);
-    return interaction.reply({ content: "Winner recorded.", ephemeral: true });
-  }
-
-  if (interaction.commandName === "rematch") {
-    const matchNum = interaction.options.getInteger("match");
-    const match = tournament.matches[matchNum - 1];
-    if (!match) return interaction.reply("Invalid match.");
-    match.winner = null;
-    return interaction.reply("🔁 Match reset.");
-  }
-
-  if (interaction.commandName === "end") {
-    resetTournament();
-    return interaction.reply("🏁 Tournament reset.");
-  }
-});
-
-client.login(TOKEN);
+client.login(process.env.DISCORD_TOKEN);
