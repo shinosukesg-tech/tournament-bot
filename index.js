@@ -9,10 +9,10 @@ const {
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-
 const PREFIX = ";";
 
-const BANNER = "https://cdn.discordapp.com/attachments/1471952333209604239/1476249775681835169/brave_screenshot_discord.com.png";
+const BANNER =
+  "https://cdn.discordapp.com/attachments/1471952333209604239/1476249775681835169/brave_screenshot_discord.com.png";
 
 const client = new Client({
   intents: [
@@ -22,9 +22,6 @@ const client = new Client({
   ]
 });
 
-// =========================
-// TOURNAMENT STATE
-// =========================
 let tournament = {
   mode: null,
   teams: [],
@@ -32,18 +29,6 @@ let tournament = {
   started: false,
   round: 1
 };
-
-// =========================
-// UTILS
-// =========================
-function createEmbed(title, description, color = "Gold", fields = []) {
-  return new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(description)
-    .addFields(fields)
-    .setColor(color)
-    .setImage(BANNER);
-}
 
 function resetTournament() {
   tournament = {
@@ -53,6 +38,15 @@ function resetTournament() {
     started: false,
     round: 1
   };
+}
+
+function createEmbed(title, description, color = "Gold", fields = []) {
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .addFields(fields)
+    .setColor(color)
+    .setImage(BANNER);
 }
 
 function generateMatches() {
@@ -76,15 +70,10 @@ function sendRound(channel) {
 
   channel.send({
     embeds: [
-      createEmbed(
-        `🏆 Round ${tournament.round}`,
-        text,
-        "Gold",
-        [
-          { name: "🎮 Mode", value: tournament.mode, inline: true },
-          { name: "👥 Teams Remaining", value: `${tournament.teams.length}`, inline: true }
-        ]
-      )
+      createEmbed(`🏆 Round ${tournament.round}`, text, "Gold", [
+        { name: "🎮 Mode", value: tournament.mode, inline: true },
+        { name: "👥 Teams Remaining", value: `${tournament.teams.length}`, inline: true }
+      ])
     ]
   });
 }
@@ -110,6 +99,7 @@ function checkRoundComplete(channel) {
         )
       ]
     });
+
     return resetTournament();
   }
 
@@ -119,60 +109,18 @@ function checkRoundComplete(channel) {
   sendRound(channel);
 }
 
-// =========================
-// SLASH COMMANDS REGISTER
-// =========================
-const slashCommands = [
-  new SlashCommandBuilder()
-    .setName("tournament")
-    .setDescription("Register a team")
-    .addStringOption(o =>
-      o.setName("mode")
-        .setDescription("1v1 / 2v2 / 3v3")
-        .setRequired(true)
-        .addChoices(
-          { name: "1v1", value: "1v1" },
-          { name: "2v2", value: "2v2" },
-          { name: "3v3", value: "3v3" }
-        ))
-    .addUserOption(o => o.setName("player1").setRequired(true))
-    .addUserOption(o => o.setName("player2"))
-    .addUserOption(o => o.setName("player3")),
-
-  new SlashCommandBuilder().setName("players").setDescription("Show teams"),
-  new SlashCommandBuilder().setName("start").setDescription("Start tournament"),
-  new SlashCommandBuilder()
-    .setName("report")
-    .setDescription("Report winner")
-    .addIntegerOption(o => o.setName("match").setRequired(true))
-    .addStringOption(o => o.setName("winner").setRequired(true)),
-  new SlashCommandBuilder()
-    .setName("rematch")
-    .setDescription("Reset a match")
-    .addIntegerOption(o => o.setName("match").setRequired(true)),
-  new SlashCommandBuilder().setName("end").setDescription("Reset tournament")
-].map(cmd => cmd.toJSON());
-
-client.once("ready", async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
-  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: slashCommands });
-
-  console.log("✅ Slash commands registered.");
-});
-
-// =========================
-// CORE LOGIC FUNCTION
-// =========================
 function registerTeam(mode, players, channel) {
-
-  if (tournament.started)
-    return channel.send("Tournament already started!");
+  if (tournament.started) return channel.send("Tournament already started.");
 
   if (!tournament.mode) tournament.mode = mode;
   if (tournament.mode !== mode)
     return channel.send(`Tournament already set to ${tournament.mode}`);
+
+  const required =
+    mode === "1v1" ? 1 : mode === "2v2" ? 2 : 3;
+
+  if (players.length !== required)
+    return channel.send(`You must provide ${required} players.`);
 
   for (const team of tournament.teams) {
     for (const p of players) {
@@ -190,24 +138,102 @@ function registerTeam(mode, players, channel) {
 
   channel.send({
     embeds: [
-      createEmbed(
-        "🎫 Team Registered",
-        `**${teamName}** joined!`,
-        "Green",
-        [
-          { name: "🎮 Mode", value: tournament.mode, inline: true },
-          { name: "👥 Total Teams", value: `${tournament.teams.length}`, inline: true }
-        ]
-      )
+      createEmbed("🎫 Team Registered", `**${teamName}** joined!`, "Green", [
+        { name: "🎮 Mode", value: tournament.mode, inline: true },
+        { name: "👥 Total Teams", value: `${tournament.teams.length}`, inline: true }
+      ])
     ]
   });
 }
 
-// =========================
-// PREFIX COMMANDS
-// =========================
-client.on("messageCreate", async message => {
+/* =========================
+   SLASH COMMAND REGISTRATION
+========================= */
 
+const slashCommands = [
+  new SlashCommandBuilder()
+    .setName("tournament")
+    .setDescription("Register a tournament team")
+    .addStringOption(o =>
+      o.setName("mode")
+        .setDescription("Choose 1v1, 2v2 or 3v3")
+        .setRequired(true)
+        .addChoices(
+          { name: "1v1", value: "1v1" },
+          { name: "2v2", value: "2v2" },
+          { name: "3v3", value: "3v3" }
+        )
+    )
+    .addUserOption(o =>
+      o.setName("player1")
+        .setDescription("First player")
+        .setRequired(true)
+    )
+    .addUserOption(o =>
+      o.setName("player2")
+        .setDescription("Second player")
+        .setRequired(false)
+    )
+    .addUserOption(o =>
+      o.setName("player3")
+        .setDescription("Third player")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("players")
+    .setDescription("View registered teams"),
+
+  new SlashCommandBuilder()
+    .setName("start")
+    .setDescription("Start the tournament"),
+
+  new SlashCommandBuilder()
+    .setName("report")
+    .setDescription("Report a match winner")
+    .addIntegerOption(o =>
+      o.setName("match")
+        .setDescription("Match number")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("winner")
+        .setDescription("Winning team name")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("rematch")
+    .setDescription("Reset a match")
+    .addIntegerOption(o =>
+      o.setName("match")
+        .setDescription("Match number")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("end")
+    .setDescription("End and reset tournament")
+].map(cmd => cmd.toJSON());
+
+client.once("ready", async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+  await rest.put(
+    Routes.applicationCommands(CLIENT_ID),
+    { body: slashCommands }
+  );
+
+  console.log("✅ Slash commands registered.");
+});
+
+/* =========================
+   PREFIX COMMANDS
+========================= */
+
+client.on("messageCreate", message => {
   if (message.author.bot) return;
   if (!message.content.startsWith(PREFIX)) return;
 
@@ -216,11 +242,8 @@ client.on("messageCreate", async message => {
 
   if (cmd === "tournament") {
     const mode = args[0];
-    if (!["1v1", "2v2", "3v3"].includes(mode))
-      return message.reply("Usage: ;tournament 1v1|2v2|3v3 @players");
-
-    const mentions = [...message.mentions.users.values()];
-    return registerTeam(mode, mentions, message.channel);
+    const players = [...message.mentions.users.values()];
+    return registerTeam(mode, players, message.channel);
   }
 
   if (cmd === "players") {
@@ -259,12 +282,12 @@ client.on("messageCreate", async message => {
     resetTournament();
     return message.channel.send("🏁 Tournament reset.");
   }
-
 });
 
-// =========================
-// SLASH COMMANDS
-// =========================
+/* =========================
+   SLASH COMMAND HANDLER
+========================= */
+
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -277,18 +300,14 @@ client.on("interactionCreate", async interaction => {
     ].filter(Boolean);
 
     registerTeam(mode, players, interaction.channel);
-    return interaction.reply({ content: "Team registered!", ephemeral: true });
+    return interaction.reply({ content: "Team registered.", ephemeral: true });
   }
 
   if (interaction.commandName === "players") {
     if (!tournament.teams.length)
       return interaction.reply("No teams.");
-
     const list = tournament.teams.map((t,i)=>`${i+1}. ${t.name}`).join("\n");
-
-    return interaction.reply({
-      embeds: [createEmbed("👥 Teams", list, "Blue")]
-    });
+    return interaction.reply({ embeds: [createEmbed("👥 Teams", list, "Blue")]});
   }
 
   if (interaction.commandName === "start") {
@@ -296,7 +315,7 @@ client.on("interactionCreate", async interaction => {
     tournament.round = 1;
     generateMatches();
     sendRound(interaction.channel);
-    return interaction.reply({ content: "Tournament started!", ephemeral: true });
+    return interaction.reply({ content: "Tournament started.", ephemeral: true });
   }
 
   if (interaction.commandName === "report") {
@@ -306,7 +325,7 @@ client.on("interactionCreate", async interaction => {
     if (!match) return interaction.reply("Invalid match.");
     match.winner = winner;
     checkRoundComplete(interaction.channel);
-    return interaction.reply({ content: "Winner recorded!", ephemeral: true });
+    return interaction.reply({ content: "Winner recorded.", ephemeral: true });
   }
 
   if (interaction.commandName === "rematch") {
@@ -321,7 +340,6 @@ client.on("interactionCreate", async interaction => {
     resetTournament();
     return interaction.reply("🏁 Tournament reset.");
   }
-
 });
 
 client.login(TOKEN);
