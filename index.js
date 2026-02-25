@@ -70,7 +70,7 @@ async function sendPanel(channel) {
     )
     .setColor("#FFD700")
     .setImage(BANNER_URL)
-    .setFooter({ text: "XNZ Tours Automated Tournament System" });
+    .setFooter({ text: "ShinTours Automated Tournament System" });
 
   const buttons = [];
 
@@ -297,3 +297,4 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
