@@ -1,300 +1,264 @@
+
+
 const {
-  Client,
-  GatewayIntentBits,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  PermissionsBitField
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Partials
 } = require("discord.js");
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: ["CHANNEL"]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: [Partials.Channel]
 });
 
-const prefix = ";";
-const HOST_ROLE_NAME = "Tournament Host";
-const BANNER_URL = "https://cdn.discordapp.com/attachments/1471952333209604239/1476249775681835169/brave_screenshot_discord.com.png?ex=69a0703d&is=699f1ebd&hm=6d406c9e0afc71eaa13d789fad08e88caa8c0010007afd9aa307f20959895aaa";
-const MAX_TEAMS = 16;
-
-let panelMessage = null;
+const PREFIX = ";";
+const BANNER_URL = "https://cdn.discordapp.com/attachments/1415778886285000876/1467953312702922960/Event_Background_EventDash.png?ex=69a0940f&is=699f428f&hm=5d8bcdb9d7e3a7a97b8cf1be27264a07134c6a252ed883e99ef5ddd413ffd1ab&";
+const CHAMPION_ROLE_NAME = "Tournament Champion";
 
 let tournament = {
-  mode: null,
-  teamSize: 1,
-  teams: [],
-  matches: [],
-  started: false,
-  round: 1
+  mode: null,
+  players: [],
+  teams: [],
+  matches: [],
+  winners: [],
+  started: false,
+  round: 1
 };
 
 /* ================= STAFF CHECK ================= */
-
 function isStaff(member) {
-  return (
-    member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-    member.roles.cache.some(r => r.name === HOST_ROLE_NAME)
-  );
+  return member.permissions.has("Administrator");
 }
 
-/* ================= CREATE ================= */
+/* ================= MATCH CREATION ================= */
+function createMatchesFromTeams(teamList) {
+  const matches = [];
+  const shuffled = [...teamList];
 
-function createTournament(mode) {
-  tournament = {
-    mode,
-    teamSize: parseInt(mode[0]),
-    teams: [],
-    matches: [],
-    started: false,
-    round: 1
-  };
+  while (shuffled.length >= 2) {
+    const t1 = shuffled.shift();
+    const t2 = shuffled.shift();
+    matches.push({ team1: t1, team2: t2 });
+  }
+
+  return matches;
 }
 
-/* ================= PANEL ================= */
-
-async function sendPanel(channel) {
-  const embed = new EmbedBuilder()
-    .setTitle(`🏆 Shin TOURS • ${tournament.mode || "NO"} TOURNAMENT`)
-    .setDescription(
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `🎮 Mode: ${tournament.mode || "None"}\n` +
-      `👥 Registered: ${tournament.teams.length}/${MAX_TEAMS}\n` +
-      `🔥 Status: ${tournament.started ? "LIVE" : "OPEN"}\n` +
-      `━━━━━━━━━━━━━━━━━━`
-    )
-    .setColor("#FFD700")
-    .setImage(BANNER_URL)
-    .setFooter({ text: "ShinTours Automated Tournament System" });
-
-  const buttons = [];
-
-  if (tournament.mode === "1v1" && !tournament.started) {
-    buttons.push(
-      new ButtonBuilder()
-        .setCustomId("register1v1")
-        .setLabel("Register")
-        .setStyle(ButtonStyle.Primary)
-    );
-  }
-
-  buttons.push(
-    new ButtonBuilder()
-      .setCustomId("counter")
-      .setLabel(`Teams: ${tournament.teams.length}`)
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(true)
-  );
-
-  buttons.push(
-    new ButtonBuilder()
-      .setCustomId("start")
-      .setLabel("Start")
-      .setStyle(ButtonStyle.Success)
-  );
-
-  const row = new ActionRowBuilder().addComponents(buttons);
-
-  if (!panelMessage)
-    panelMessage = await channel.send({ embeds: [embed], components: [row] });
-  else
-    await panelMessage.edit({ embeds: [embed], components: [row] });
-}
-
-/* ================= BOT FILL ================= */
-
-function fillWithBots() {
-  let count = 1;
-  while (tournament.teams.length < MAX_TEAMS) {
-    const team = [];
-    for (let i = 0; i < tournament.teamSize; i++)
-      team.push(`BOT_${count}_${i}`);
-    tournament.teams.push(team);
-    count++;
-  }
-}
-
-/* ================= MATCH SYSTEM ================= */
-
-function generateMatches() {
-  const shuffled = [...tournament.teams].sort(() => Math.random() - 0.5);
-  tournament.matches = [];
-
-  for (let i = 0; i < shuffled.length; i += 2)
-    tournament.matches.push({
-      team1: shuffled[i],
-      team2: shuffled[i + 1]
-    });
-}
-
-function announceMatches(channel) {
-  let msg = `\n🏆 ROUND ${tournament.round}\n\n`;
-  tournament.matches.forEach((m, i) => {
-    const t1 = m.team1.map(p => p.startsWith("BOT") ? p : `<@${p}>`).join(", ");
-    const t2 = m.team2.map(p => p.startsWith("BOT") ? p : `<@${p}>`).join(", ");
-    msg += `Match ${i + 1}: ${t1} 🆚 ${t2}\n`;
-  });
-  channel.send(msg);
-}
-
-function advanceRound(channel) {
-  if (tournament.teams.length <= 1) {
-    const winner = tournament.teams[0]
-      .map(p => p.startsWith("BOT") ? p : `<@${p}>`)
-      .join(", ");
-    channel.send(`🏆 WINNER: ${winner}`);
-    tournament.started = false;
-    return;
-  }
-
-  tournament.round++;
-  generateMatches();
-  announceMatches(channel);
-}
-
-/* ================= COMMANDS ================= */
-
-client.on("messageCreate", async msg => {
-  if (!msg.content.startsWith(prefix) || msg.author.bot) return;
-
-  const args = msg.content.slice(prefix.length).trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
-
-  /* CREATE */
-  if (cmd === "tournament") {
-    if (!isStaff(msg.member)) return msg.reply("Staff only.");
-    const mode = args[0];
-    if (!["1v1", "2v2", "3v3"].includes(mode))
-      return msg.reply("Use 1v1 / 2v2 / 3v3");
-    createTournament(mode);
-    return sendPanel(msg.channel);
-  }
-
-  /* REGISTER 2v2 */
-  if (cmd === "register2v2" && tournament.mode === "2v2") {
-    if (tournament.started) return msg.reply("Started.");
-    if (msg.mentions.users.size !== 2) return msg.reply("Mention 2 players.");
-    const ids = [...msg.mentions.users.values()].map(u => u.id);
-    if (ids.some(id => tournament.teams.flat().includes(id)))
-      return msg.reply("Player already registered.");
-    tournament.teams.push(ids);
-    sendPanel(msg.channel);
-  }
-
-  /* REGISTER 3v3 */
-  if (cmd === "register3v3" && tournament.mode === "3v3") {
-    if (tournament.started) return msg.reply("Started.");
-    if (msg.mentions.users.size !== 3) return msg.reply("Mention 3 players.");
-    const ids = [...msg.mentions.users.values()].map(u => u.id);
-    if (ids.some(id => tournament.teams.flat().includes(id)))
-      return msg.reply("Player already registered.");
-    tournament.teams.push(ids);
-    sendPanel(msg.channel);
-  }
-
-  /* QUALIFY */
-  if (cmd === "qualify") {
-    if (!isStaff(msg.member)) return msg.reply("Staff only.");
-    const user = msg.mentions.users.first();
-    if (!user) return msg.reply("Mention player.");
-
-    const match = tournament.matches.find(m =>
-      m.team1.includes(user.id) || m.team2.includes(user.id)
-    );
-    if (!match) return msg.reply("Player not in match.");
-
-    const winner = match.team1.includes(user.id)
-      ? match.team1
-      : match.team2;
-
-    tournament.teams = tournament.teams.filter(t =>
-      t !== match.team1 && t !== match.team2
-    );
-
-    tournament.teams.push(winner);
-    advanceRound(msg.channel);
-  }
-
-  /* CODE */
-  if (cmd === "code") {
-    if (!isStaff(msg.member)) return msg.reply("Staff only.");
-
-    const mode = args[0];
-    const roomCode = args[1];
-    const user = msg.mentions.users.first();
-
-    if (!["1v1", "2v2", "3v3"].includes(mode))
-      return msg.reply("Usage: ;code 3v3 12345 @player");
-
-    if (!roomCode) return msg.reply("Provide room code.");
-    if (!user) return msg.reply("Mention player.");
-
-    const team = tournament.teams.find(t => t.includes(user.id));
-    if (!team) return msg.reply("Player not registered.");
-
-    const embed = new EmbedBuilder()
-      .setTitle("🎟️ MATCH ROOM CODE")
-      .setDescription(
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `🎮 Mode: ${mode}\n\n` +
-        `🔑 ROOM CODE: \`${roomCode}\`\n` +
-        `━━━━━━━━━━━━━━━━━━`
-      )
-      .setColor("#00FFAA")
-      .setImage(BANNER_URL);
-
-    for (const id of team) {
-      if (!id.startsWith("BOT")) {
-        try {
-          const member = await msg.guild.members.fetch(id);
-          await member.send({ embeds: [embed] });
-        } catch {}
-      }
-    }
-
-    await msg.delete().catch(() => {});
-    const confirm = await msg.channel.send("✅ Code sent via DM.");
-    setTimeout(() => confirm.delete().catch(() => {}), 5000);
-  }
+/* ================= READY ================= */
+client.once("ready", () => {
+  console.log(`${client.user.tag} is online`);
 });
 
-/* ================= BUTTONS ================= */
+/* ================= HELP ================= */
+function helpEmbed() {
+  return new EmbedBuilder()
+    .setTitle("🏆 Tournament System Commands")
+    .setColor("#00ff99")
+    .setImage(BANNER_URL)
+    .setDescription(`
+**🎮 Setup**
+;1v1
+;2v2
+;3v3
+;start
+;qualify @player
 
+**📝 Register**
+(1v1 uses button)
+;register2v2 @p1 @p2
+;register3v3 @p1 @p2 @p3
+
+**🔑 Match Code**
+;code 1v1 CODE @player
+;code 2v2 CODE @player
+;code 3v3 CODE @player
+
+;help
+`);
+}
+
+/* ================= MESSAGE HANDLER ================= */
+client.on("messageCreate", async (msg) => {
+  if (!msg.content.startsWith(PREFIX) || msg.author.bot) return;
+
+  const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
+  const cmd = args.shift().toLowerCase();
+
+  if (cmd === "help")
+    return msg.channel.send({ embeds: [helpEmbed()] });
+
+  /* ===== CREATE TOURNAMENT ===== */
+  if (["1v1", "2v2", "3v3"].includes(cmd)) {
+    if (!isStaff(msg.member)) return msg.reply("Staff only.");
+
+    tournament = {
+      mode: cmd,
+      players: [],
+      teams: [],
+      matches: [],
+      winners: [],
+      started: false,
+      round: 1
+    };
+
+    if (cmd === "1v1") {
+      const embed = new EmbedBuilder()
+        .setTitle("🏆 1v1 Registration")
+        .setColor("#00ff99")
+        .setImage(BANNER_URL)
+        .setDescription("Click to register.");
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("register1v1")
+          .setLabel("Register")
+          .setStyle(ButtonStyle.Success)
+      );
+
+      return msg.channel.send({ embeds: [embed], components: [row] });
+    }
+
+    return msg.channel.send(`✅ ${cmd} Tournament Created.`);
+  }
+
+  /* ===== REGISTER 2V2 ===== */
+  if (cmd === "register2v2" && tournament.mode === "2v2") {
+    const players = msg.mentions.users.map(u => u.id);
+    if (players.length !== 2) return msg.reply("Mention 2 players.");
+
+    if (players.some(p => tournament.players.includes(p)))
+      return msg.reply("One player already registered.");
+
+    tournament.players.push(...players);
+    tournament.teams.push(players);
+
+    return msg.channel.send("✅ 2v2 Team Registered.");
+  }
+
+  /* ===== REGISTER 3V3 ===== */
+  if (cmd === "register3v3" && tournament.mode === "3v3") {
+    const players = msg.mentions.users.map(u => u.id);
+    if (players.length !== 3) return msg.reply("Mention 3 players.");
+
+    if (players.some(p => tournament.players.includes(p)))
+      return msg.reply("One player already registered.");
+
+    tournament.players.push(...players);
+    tournament.teams.push(players);
+
+    return msg.channel.send("✅ 3v3 Team Registered.");
+  }
+
+  /* ===== START ===== */
+  if (cmd === "start") {
+    if (!isStaff(msg.member)) return;
+
+    if (tournament.mode === "1v1") {
+      tournament.teams = tournament.players.map(p => [p]);
+    }
+
+    tournament.matches = createMatchesFromTeams(tournament.teams);
+    tournament.started = true;
+    tournament.winners = [];
+    tournament.round = 1;
+
+    return msg.channel.send(`🔥 Round 1 Started!`);
+  }
+
+  /* ===== QUALIFY + AUTO NEXT ROUND ===== */
+  if (cmd === "qualify") {
+    if (!isStaff(msg.member)) return;
+
+    const user = msg.mentions.users.first();
+    if (!user) return msg.reply("Mention player.");
+
+    const matchIndex = tournament.matches.findIndex(m =>
+      m.team1.includes(user.id) ||
+      m.team2.includes(user.id)
+    );
+
+    if (matchIndex === -1)
+      return msg.reply("Player not in active match.");
+
+    const match = tournament.matches[matchIndex];
+
+    const winningTeam = match.team1.includes(user.id)
+      ? match.team1
+      : match.team2;
+
+    tournament.winners.push(winningTeam);
+    tournament.matches.splice(matchIndex, 1);
+
+    msg.channel.send(`✅ ${user} Qualified!`);
+
+    if (tournament.matches.length === 0) {
+
+      if (tournament.winners.length === 1) {
+
+        const championTeam = tournament.winners[0];
+        const championMentions = championTeam.map(id => `<@${id}>`).join(" ");
+
+        const role = msg.guild.roles.cache.find(r => r.name === CHAMPION_ROLE_NAME);
+
+        for (const id of championTeam) {
+          const member = await msg.guild.members.fetch(id);
+          if (role) await member.roles.add(role).catch(() => {});
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
+          .setColor("#FFD700")
+          .setImage(BANNER_URL)
+          .setDescription(`
+🔥 **CONGRATULATIONS!** 🔥
+
+${championMentions}
+
+You are the official Tournament Champion!
+`);
+
+        tournament.started = false;
+
+        return msg.channel.send({ embeds: [embed] });
+      }
+
+      tournament.round++;
+      tournament.matches = createMatchesFromTeams(tournament.winners);
+      tournament.winners = [];
+
+      msg.channel.send(`🔥 Round ${tournament.round} Started!`);
+    }
+  }
+});
+
+/* ===== 1V1 BUTTON ===== */
 client.on("interactionCreate", async interaction => {
-  if (!interaction.isButton()) return;
+  if (!interaction.isButton()) return;
 
-  if (interaction.customId === "register1v1") {
-    if (tournament.started)
-      return interaction.reply({ content: "Started.", ephemeral: true });
+  if (interaction.customId === "register1v1") {
 
-    if (tournament.teams.flat().includes(interaction.user.id))
-      return interaction.reply({ content: "Already registered.", ephemeral: true });
+    if (tournament.players.includes(interaction.user.id))
+      return interaction.reply({ content: "Already registered.", ephemeral: true });
 
-    tournament.teams.push([interaction.user.id]);
-    await interaction.reply({ content: "Registered!", ephemeral: true });
-    sendPanel(interaction.channel);
-  }
+    tournament.players.push(interaction.user.id);
 
-  if (interaction.customId === "start") {
-    if (!isStaff(interaction.member))
-      return interaction.reply({ content: "Staff only.", ephemeral: true });
-
-    if (tournament.teams.length < 2)
-      return interaction.reply({ content: "Not enough teams.", ephemeral: true });
-
-    fillWithBots();
-    tournament.started = true;
-    generateMatches();
-    announceMatches(interaction.channel);
-
-    interaction.reply({ content: "Tournament Started!", ephemeral: true });
-  }
+    return interaction.reply({
+      content: "✅ Registered!",
+      ephemeral: true
+    });
+  }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.TOKEN);
+
 
