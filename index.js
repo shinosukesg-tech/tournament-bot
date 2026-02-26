@@ -318,4 +318,4 @@ Congratulations on winning the ShinTours Tournament!
   tournament.bracketId = newBracket.id;
 }
 
-client.login(process.env.TOKEN);
+client.login(process.env.DISCORD_TOKEN);
