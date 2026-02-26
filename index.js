@@ -1,17 +1,18 @@
-/* ===== RENDER FREE JUGAAD (KEEP SERVICE ALIVE) ===== */
+/* ===== RENDER FREE JUGAAD (DO NOT REMOVE) ===== */
 const express = require("express");
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
-  res.send("Bot is running!");
+  res.send("Bot is alive!");
 });
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Web server running on port " + PORT);
 });
 /* ===== END RENDER JUGAAD ===== */
+
 require("dotenv").config();
 const {
   Client,
@@ -38,7 +39,7 @@ const client = new Client({
 /* ================= TOURNAMENT STATE ================= */
 
 let tournament = null;
-let commandLock = false; // 🔥 Anti-duplicate lock
+let commandLock = false;
 
 function createTournament(playerCount) {
   return {
@@ -175,148 +176,10 @@ client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-/* ================= COMMANDS ================= */
+/* ================= LOGIN SAFE CHECK ================= */
 
-client.on("messageCreate", async (msg) => {
-  if (!msg.guild || msg.author.bot) return;
-  if (!msg.content.startsWith(PREFIX)) return;
-
-  const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
-  const cmd = args.shift()?.toLowerCase();
-
-  msg.delete().catch(() => {});
-
-  if (cmd === "1v1") {
-
-    if (!isStaff(msg.member)) return;
-
-    // 🔥 Prevent double execution
-    if (commandLock) return;
-    commandLock = true;
-    setTimeout(() => commandLock = false, 2000);
-
-    if (tournament && !tournament.started) {
-      return msg.channel.send("⚠️ A tournament is already open.");
-    }
-
-    let playerCount = parseInt(args[0]);
-    if (!playerCount || playerCount < 2) playerCount = 8;
-
-    tournament = createTournament(playerCount);
-
-    const panel = await msg.channel.send({
-      embeds: [panelEmbed()],
-      components: [panelButtons()]
-    });
-
-    tournament.panelId = panel.id;
-  }
-
-  if (cmd === "win" || cmd === "qualify") {
-
-    if (!tournament || !tournament.started) return;
-    if (!isStaff(msg.member)) return;
-
-    const player = msg.mentions.users.first();
-    if (!player) return;
-
-    const match = tournament.matches.find(
-      m => !m.winner && (m.p1 === player.id || m.p2 === player.id)
-    );
-
-    if (!match) return;
-
-    match.winner = player.id;
-    updateBracket(msg.channel);
-  }
-});
-
-/* ================= BUTTONS ================= */
-
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
-  if (!tournament) return;
-
-  if (interaction.customId === "register") {
-
-    if (tournament.started)
-      return interaction.reply({ content: "Tournament already started.", ephemeral: true });
-
-    if (tournament.players.includes(interaction.user.id))
-      return interaction.reply({ content: "⚠️ You are already registered.", ephemeral: true });
-
-    if (tournament.players.length >= tournament.maxPlayers)
-      return interaction.reply({ content: "❌ Tournament is full.", ephemeral: true });
-
-    tournament.players.push(interaction.user.id);
-    await interaction.reply({ content: "✅ Successfully registered!", ephemeral: true });
-  }
-
-  if (interaction.customId === "unregister") {
-
-    if (!tournament.players.includes(interaction.user.id))
-      return interaction.reply({ content: "You are not registered.", ephemeral: true });
-
-    tournament.players =
-      tournament.players.filter(id => id !== interaction.user.id);
-
-    await interaction.reply({ content: "Unregistered successfully.", ephemeral: true });
-  }
-
-  if (interaction.customId === "start") {
-
-    if (!isStaff(interaction.member))
-      return interaction.reply({ content: "Staff only.", ephemeral: true });
-
-    if (tournament.players.length < 2)
-      return interaction.reply({ content: "Not enough players.", ephemeral: true });
-
-    tournament.started = true;
-    tournament.matches = createMatches(tournament.players);
-
-    const bracketMsg = await interaction.channel.send({
-      embeds: [bracketEmbed()]
-    });
-
-    tournament.bracketId = bracketMsg.id;
-    await interaction.reply({ content: "Tournament started!", ephemeral: true });
-  }
-
-  const panel = await interaction.channel.messages.fetch(tournament.panelId);
-  await panel.edit({
-    embeds: [panelEmbed()],
-    components: [panelButtons()]
-  });
-});
-
-/* ================= ROUND SYSTEM ================= */
-
-async function updateBracket(channel) {
-
-  const unfinished = tournament.matches.filter(m => !m.winner);
-
-  if (unfinished.length > 0) {
-    const msg = await channel.messages.fetch(tournament.bracketId);
-    return msg.edit({ embeds: [bracketEmbed()] });
-  }
-
-  const winners = tournament.matches.map(m => m.winner);
-
-  const old = await channel.messages.fetch(tournament.bracketId);
-  await old.delete().catch(() => {});
-
-  if (winners.length === 1)
-    return channel.send(`👑 Champion: <@${winners[0]}>`);
-
-  tournament.round++;
-  tournament.matches = createMatches(winners);
-
-  const newMsg = await channel.send({
-    embeds: [bracketEmbed()]
-  });
-
-  tournament.bracketId = newMsg.id;
+if (!process.env.TOKEN) {
+  console.error("❌ TOKEN is missing in Render Environment Variables!");
+} else {
+  client.login(process.env.TOKEN);
 }
-
-client.login(process.env.TOKEN);
-
