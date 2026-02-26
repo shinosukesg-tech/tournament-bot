@@ -31,15 +31,15 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: ["CHANNEL"]
+    GatewayIntentBits.GuildMembers
+  ]
 });
 
 /* ================= STATE ================= */
 
 let tournament = null;
+
+/* ================= UTIL ================= */
 
 function isStaff(member) {
   return member.roles.cache.some(r => r.name === STAFF_ROLE);
@@ -56,31 +56,24 @@ function createTournament(size, server, map) {
     map,
     players: [],
     matches: [],
-    round: 1,
     started: false,
     panelId: null
   };
 }
 
-/* ================= MATCH SYSTEM ================= */
-
 function createMatches(players) {
   const shuffled = [...players].sort(() => Math.random() - 0.5);
   const size = nextPowerOfTwo(shuffled.length);
-
   while (shuffled.length < size) shuffled.push(null);
 
   const matches = [];
-
   for (let i = 0; i < shuffled.length; i += 2) {
-    const p1 = shuffled[i];
-    const p2 = shuffled[i + 1];
-
-    if (p1 && !p2) matches.push({ p1, p2: null, winner: p1 });
-    else if (!p1 && p2) matches.push({ p1: p2, p2: null, winner: p2 });
-    else matches.push({ p1, p2, winner: null });
+    matches.push({
+      p1: shuffled[i],
+      p2: shuffled[i + 1],
+      winner: null
+    });
   }
-
   return matches;
 }
 
@@ -96,35 +89,17 @@ function registrationEmbed() {
 🌍 Server: **${tournament.server}**
 🗺 Map: **${tournament.map}**
 👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
-📌 Status: **${tournament.started ? "Started" : "Open Registration"}**
 ━━━━━━━━━━━━━━━━━━
 `)
     .setImage(BANNER);
 }
 
 function bracketEmbed() {
-  let desc = `🏆 ShinTours Tournament Bracket\n`;
-  desc += `━━━━━━━━━━━━━━━━━━\n`;
-  desc += `🎯 Round ${tournament.round}\n`;
-  desc += `🌍 Server: ${tournament.server}\n`;
-  desc += `🗺 Map: ${tournament.map}\n`;
-  desc += `━━━━━━━━━━━━━━━━━━\n\n`;
+  let desc = `🏆 ShinTours Bracket\n━━━━━━━━━━━━━━━━━━\n`;
 
   tournament.matches.forEach((m, i) => {
     desc += `⚔️ Match ${i + 1}\n`;
-
-    if (!m.p2) {
-      desc += `🆓 <@${m.p1}> (BYE)\n\n`;
-      return;
-    }
-
-    if (!m.winner) {
-      desc += `<@${m.p1}> vs <@${m.p2}>\n\n`;
-    } else {
-      const loser = m.p1 === m.winner ? m.p2 : m.p1;
-      desc += `🏆 <@${m.winner}>\n`;
-      desc += `❌ ~~<@${loser}>~~\n\n`;
-    }
+    desc += `<@${m.p1}> vs <@${m.p2}>\n\n`;
   });
 
   return new EmbedBuilder()
@@ -148,7 +123,7 @@ function mainButtons() {
   );
 }
 
-function unregisterButton() {
+function confirmUnregisterButton() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("confirm_unregister")
@@ -158,8 +133,6 @@ function unregisterButton() {
 }
 
 /* ================= COMMAND HANDLER ================= */
-
-client.removeAllListeners("messageCreate");
 
 client.on("messageCreate", async (msg) => {
   if (!msg.guild || msg.author.bot) return;
@@ -208,24 +181,21 @@ client.on("messageCreate", async (msg) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
   if (!tournament)
-    return interaction.reply({ content: "❌ No tournament running.", ephemeral: true });
+    return interaction.reply({ content: "No tournament running.", ephemeral: true });
 
-  /* REGISTER BUTTON */
+  /* REGISTER */
   if (interaction.customId === "register") {
-
-    if (tournament.started)
-      return interaction.reply({ content: "❌ Tournament already started.", ephemeral: true });
 
     if (tournament.players.includes(interaction.user.id)) {
       return interaction.reply({
         content: "You are already registered.\nDo you want to unregister?",
-        components: [unregisterButton()],
+        components: [confirmUnregisterButton()],
         ephemeral: true
       });
     }
 
     if (tournament.players.length >= tournament.maxPlayers)
-      return interaction.reply({ content: "❌ Tournament full.", ephemeral: true });
+      return interaction.reply({ content: "Tournament full.", ephemeral: true });
 
     tournament.players.push(interaction.user.id);
 
@@ -250,13 +220,14 @@ client.on("interactionCreate", async (interaction) => {
     });
   }
 
-  /* START BUTTON */
+  /* START */
   if (interaction.customId === "start") {
+
     if (!isStaff(interaction.member))
       return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
 
     if (tournament.players.length < 2)
-      return interaction.reply({ content: "❌ Not enough players.", ephemeral: true });
+      return interaction.reply({ content: "Not enough players.", ephemeral: true });
 
     tournament.started = true;
     tournament.matches = createMatches(tournament.players);
