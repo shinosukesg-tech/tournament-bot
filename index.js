@@ -26,7 +26,7 @@ const {
 
 const PREFIX = ";";
 const STAFF_ROLE = "Tournament Staff";
-const BANNER = "https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png";
+const BANNER = "https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png?ex=69a163ef&is=69a0126f&hm=eed8b5b0c3a378e4fd6eb344ab17a15e161161c78ce57a78c727493eaa9bc249&";
 
 const client = new Client({
   intents: [
@@ -871,6 +871,7 @@ client.once("ready", () => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
 
 
 
