@@ -85,10 +85,42 @@ function registrationEmbed() {
     .setImage(BANNER);
 }
 
+function helpEmbed() {
+  return new EmbedBuilder()
+    .setColor("#5865F2")
+    .setTitle("🏆 ShinTours Help")
+    .setDescription(`
+━━━━━━━━━━━━━━━━━━
+🎮 **Commands**
+━━━━━━━━━━━━━━━━━━
+
+\`;1v1 <players>\`  
+Create tournament
+
+\`;code <room> @p1 @p2\`  
+Send private match code
+
+\`;win @player\`  
+Mark winner
+
+\`;qualify @player\`  
+Same as win
+
+\`;help\`  
+Show this menu
+
+━━━━━━━━━━━━━━━━━━
+👮 Staff required for:
+1v1 • code • win • qualify
+━━━━━━━━━━━━━━━━━━
+`)
+    .setImage(BANNER);
+}
+
 function progressBar() {
   const total = tournament.matches.length;
-  const finished = tournament.matches.filter(m => m.winner).length;
-  const percent = total === 0 ? 0 : Math.floor((finished / total) * 100);
+  const done = tournament.matches.filter(m => m.winner).length;
+  const percent = total === 0 ? 0 : Math.floor((done / total) * 100);
   const filled = Math.floor(percent / 10);
   return `\`${"█".repeat(filled)}${"░".repeat(10 - filled)}\` ${percent}%`;
 }
@@ -125,8 +157,6 @@ function bracketEmbed() {
     .setImage(BANNER);
 }
 
-/* ================= BUTTONS ================= */
-
 function buttons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -158,14 +188,18 @@ client.on("messageCreate", async (msg) => {
 
   msg.delete().catch(() => {});
 
-  /* ===== CREATE TOURNAMENT ===== */
+  /* HELP */
+  if (cmd === "help") {
+    return msg.channel.send({ embeds: [helpEmbed()] });
+  }
 
+  /* CREATE */
   if (cmd === "1v1") {
     if (!isStaff(msg.member))
       return msg.channel.send("❌ Staff only.");
 
     if (tournament && !tournament.started)
-      return msg.channel.send("⚠️ Tournament already created.");
+      return msg.channel.send("⚠️ Tournament already exists.");
 
     const size = parseInt(args[0]) || 8;
     tournament = createTournament(size);
@@ -178,8 +212,7 @@ client.on("messageCreate", async (msg) => {
     tournament.panelId = panel.id;
   }
 
-  /* ===== PRIVATE MATCH CODE ===== */
-
+  /* PRIVATE CODE */
   if (cmd === "code") {
     if (!tournament?.started || !isStaff(msg.member)) return;
 
@@ -191,16 +224,15 @@ client.on("messageCreate", async (msg) => {
       return msg.channel.send("Usage: ;code ROOM @p1 @p2");
 
     try {
-      await p1.send(`🏆 ShinTours Match\nRoom Code: \`${room}\`\nOpponent: <@${p2.id}>`);
-      await p2.send(`🏆 ShinTours Match\nRoom Code: \`${room}\`\nOpponent: <@${p1.id}>`);
+      await p1.send(`🏆 Match Code: \`${room}\`\nOpponent: <@${p2.id}>`);
+      await p2.send(`🏆 Match Code: \`${room}\`\nOpponent: <@${p1.id}>`);
       msg.channel.send("✅ Code sent privately.");
     } catch {
       msg.channel.send("⚠️ Cannot DM players.");
     }
   }
 
-  /* ===== WIN / QUALIFY ===== */
-
+  /* WIN / QUALIFY */
   if (cmd === "win" || cmd === "qualify") {
     if (!tournament?.started || !isStaff(msg.member)) return;
 
@@ -225,7 +257,7 @@ client.on("interactionCreate", async (interaction) => {
 
   if (interaction.customId === "register") {
     if (tournament.players.includes(interaction.user.id))
-      return interaction.reply({ content: "You already registered.", ephemeral: true });
+      return interaction.reply({ content: "Already registered.", ephemeral: true });
 
     if (tournament.players.length >= tournament.maxPlayers)
       return interaction.reply({ content: "Tournament full.", ephemeral: true });
@@ -266,19 +298,16 @@ client.on("interactionCreate", async (interaction) => {
   });
 });
 
-/* ================= ROUND PROGRESSION ================= */
+/* ================= ROUND SYSTEM ================= */
 
 async function updateBracket(channel) {
 
   const bracketMsg = await channel.messages.fetch(tournament.bracketId);
   await bracketMsg.edit({ embeds: [bracketEmbed()] });
 
-  const unfinished = tournament.matches.filter(m => !m.winner);
-  if (unfinished.length > 0) return;
+  if (tournament.matches.some(m => !m.winner)) return;
 
   const winners = tournament.matches.map(m => m.winner);
-
-  /* ===== FINAL WINNER ===== */
 
   if (winners.length === 1) {
 
@@ -305,8 +334,6 @@ Congratulations on winning the ShinTours Tournament!
     tournament = null;
     return;
   }
-
-  /* ===== NEXT ROUND ===== */
 
   tournament.round++;
   tournament.matches = createMatches(winners);
