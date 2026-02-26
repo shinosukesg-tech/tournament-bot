@@ -1,4 +1,20 @@
 require("dotenv").config();
+
+/* ===== RENDER FREE JUGAAD (DO NOT REMOVE) ===== */
+const express = require("express");
+const app = express();
+
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Bot is alive!");
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("Web server running on port " + PORT);
+});
+/* ===== END RENDER JUGAAD ===== */
+
 const {
   Client,
   GatewayIntentBits,
@@ -87,8 +103,6 @@ function bracketEmbed() {
     .setImage(BANNER);
 }
 
-/* ================= PANEL ================= */
-
 function panelEmbed() {
   return new EmbedBuilder()
     .setColor("#2ecc71")
@@ -118,13 +132,9 @@ function panelButtons() {
   );
 }
 
-/* ================= READY ================= */
-
 client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
-
-/* ================= MESSAGE COMMANDS ================= */
 
 client.on("messageCreate", async (msg) => {
   if (!msg.guild) return;
@@ -134,7 +144,6 @@ client.on("messageCreate", async (msg) => {
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift()?.toLowerCase();
 
-  /* HELP */
   if (cmd === "help") {
     return msg.channel.send({
       embeds: [
@@ -153,7 +162,6 @@ client.on("messageCreate", async (msg) => {
     });
   }
 
-  /* CREATE 1V1 */
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return msg.reply("Staff only.");
 
@@ -176,15 +184,12 @@ client.on("messageCreate", async (msg) => {
     tournament.panelId = panel.id;
   }
 
-  /* REGISTER 2v2 / 3v3 */
   if (cmd === "register") {
     const mode = args[0];
     if (!mode) return;
-
     return msg.reply(`Registered for ${mode}`);
   }
 
-  /* CODE */
   if (cmd === "code") {
     if (!isStaff(msg.member)) return msg.reply("Staff only.");
 
@@ -206,7 +211,6 @@ client.on("messageCreate", async (msg) => {
     return msg.channel.send(`✅ Code sent.`);
   }
 
-  /* WIN / QUALIFY */
   if (cmd === "win" || cmd === "qualify") {
     if (!isStaff(msg.member)) return msg.reply("Staff only.");
     if (!tournament || !tournament.started) return;
@@ -226,8 +230,6 @@ client.on("messageCreate", async (msg) => {
     return updateBracket(msg.channel);
   }
 });
-
-/* ================= BUTTONS ================= */
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
@@ -257,8 +259,6 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-/* ================= ROUND UPDATE ================= */
-
 async function updateBracket(channel) {
   const unfinished = tournament.matches.filter(m => !m.winner);
   if (unfinished.length > 0)
@@ -275,7 +275,5 @@ async function updateBracket(channel) {
 
   return channel.send({ embeds: [bracketEmbed()] });
 }
-
-/* ================= LOGIN ================= */
 
 client.login(process.env.TOKEN);
