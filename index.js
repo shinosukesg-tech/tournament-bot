@@ -8,6 +8,14 @@ const {
   Partials
 } = require("discord.js");
 
+/* ===== PREVENT DOUBLE INSTANCE ===== */
+if (global.botRunning) {
+  console.log("Bot already running. Stopping duplicate instance.");
+  process.exit(1);
+}
+global.botRunning = true;
+
+/* ===== CLIENT ===== */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -21,13 +29,12 @@ const client = new Client({
 
 const PREFIX = ";";
 const STAFF_ROLE = "Tournament Staff";
-const BANNER_URL = "https://cdn.discordapp.com/attachments/1415778886285000876/1467953312702922960/Event_Background_EventDash.png?ex=69a0940f&is=699f428f&hm=5d8bc";
+const BANNER_URL = "https://cdn.discordapp.com/attachments/1415778886285000876/1467953312702922960/Event_Background_EventDash.png?ex=69a0940f&is=699f428f&hm=5d8bcdb9d7e3a7a97b8cf1be27264a07134c6a252ed883e99ef5ddd413ffd1ab&";
 
-/* ================= TOURNAMENT DATA ================= */
-
+/* ===== TOURNAMENT DATA ===== */
 let tournament = null;
 
-function createEmptyTournament() {
+function createTournament() {
   return {
     mode: null,
     players: [],
@@ -42,14 +49,12 @@ function createEmptyTournament() {
   };
 }
 
-/* ================= STAFF CHECK ================= */
-
+/* ===== STAFF CHECK ===== */
 function isStaff(member) {
   return member.roles.cache.some(r => r.name === STAFF_ROLE);
 }
 
-/* ================= EMBED ================= */
-
+/* ===== EMBED ===== */
 function buildEmbed() {
   return new EmbedBuilder()
     .setColor("#00ff88")
@@ -90,9 +95,8 @@ function buildButtons() {
   );
 }
 
-/* ================= DELETE OLD PANELS ================= */
-
-async function deleteOldPanels(channel) {
+/* ===== DELETE OLD PANEL ===== */
+async function deleteOldPanel(channel) {
   const messages = await channel.messages.fetch({ limit: 50 });
   for (const msg of messages.values()) {
     if (
@@ -105,59 +109,37 @@ async function deleteOldPanels(channel) {
   }
 }
 
-/* ================= READY ================= */
-
+/* ================== READY ================== */
 client.once("ready", () => {
   console.log(`${client.user.tag} is online`);
 });
 
-/* ================= COMMANDS ================= */
-
+/* ================== MESSAGE HANDLER (ONLY ONE) ================== */
 client.on("messageCreate", async (msg) => {
-  if (!msg.content.startsWith(PREFIX) || msg.author.bot) return;
+  if (!msg.content.startsWith(PREFIX)) return;
+  if (msg.author.bot) return;
 
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
   /* ===== HELP ===== */
-
   if (cmd === "help") {
-    return msg.channel.send(`
-🏆 **ShinCups Tournament Help**
+    return msg.channel.send(`🏆 ShinCups Tournament Commands
 
-🎮 Create 1v1:
 ;1v1 p<number> s <server>
-Example:
-;1v1 p16 s INW
-
-👥 Create 2v2:
 ;2v2
-
-👥 Create 3v3:
 ;3v3
-
-🧑‍🤝‍🧑 Register 2v2:
 ;register 2v2 @player
-
-🧑‍🤝‍🧑 Register 3v3:
-;register 3v3 @player1 @player2
-
-🏆 Report Win (Staff):
-;win @player
-
-✅ Qualify (Staff):
-;qualify @player
-
-🎮 Send Code (Staff):
-;code 1v1 12345 @player
+;register 3v3 @p1 @p2
+;win @player (Staff)
+;qualify @player (Staff)
+;code 1v1 <code> @player (Staff)
 `);
   }
 
   /* ===== CREATE 1V1 ===== */
-
   if (cmd === "1v1") {
-    if (!isStaff(msg.member))
-      return msg.reply("Staff only.");
+    if (!isStaff(msg.member)) return msg.reply("Staff only.");
 
     const pArg = args.find(a => a.startsWith("p"));
     const sIndex = args.indexOf("s");
@@ -171,9 +153,9 @@ Example:
     if (!playerCount || playerCount < 2)
       return msg.reply("Invalid player number.");
 
-    await deleteOldPanels(msg.channel);
+    await deleteOldPanel(msg.channel);
 
-    tournament = createEmptyTournament();
+    tournament = createTournament();
     tournament.mode = "1v1";
     tournament.maxPlayers = playerCount;
     tournament.server = server;
@@ -184,17 +166,16 @@ Example:
     });
 
     tournament.panelMessage = panel.id;
+    return;
   }
 
   /* ===== CREATE 2V2 / 3V3 ===== */
-
   if (cmd === "2v2" || cmd === "3v3") {
-    if (!isStaff(msg.member))
-      return msg.reply("Staff only.");
+    if (!isStaff(msg.member)) return msg.reply("Staff only.");
 
-    await deleteOldPanels(msg.channel);
+    await deleteOldPanel(msg.channel);
 
-    tournament = createEmptyTournament();
+    tournament = createTournament();
     tournament.mode = cmd;
 
     const panel = await msg.channel.send({
@@ -203,10 +184,10 @@ Example:
     });
 
     tournament.panelMessage = panel.id;
+    return;
   }
 
   /* ===== REGISTER 2V2 / 3V3 ===== */
-
   if (cmd === "register") {
     if (!tournament) return;
 
@@ -214,7 +195,6 @@ Example:
     if (mode !== tournament.mode) return;
 
     const required = mode === "2v2" ? 1 : 2;
-
     if (msg.mentions.users.size !== required)
       return msg.reply(`Mention ${required} teammate(s).`);
 
@@ -231,69 +211,14 @@ Example:
     const panel = await msg.channel.messages.fetch(tournament.panelMessage);
     await panel.edit({ embeds: [buildEmbed()], components: [buildButtons()] });
 
-    msg.reply("Team Registered!");
-  }
-
-  /* ===== WIN ===== */
-
-  if (cmd === "win") {
-    if (!isStaff(msg.member)) return;
-    if (!tournament) return;
-
-    const mention = msg.mentions.users.first();
-    if (!mention) return;
-
-    const team = tournament.teams.find(t => t.includes(mention.id));
-    if (!team) return;
-
-    tournament.winners.push(team);
-  }
-
-  /* ===== QUALIFY ===== */
-
-  if (cmd === "qualify") {
-    if (!isStaff(msg.member)) return;
-    if (!tournament) return;
-
-    const mention = msg.mentions.users.first();
-    if (!mention) return;
-
-    const team = tournament.teams.find(t => t.includes(mention.id));
-    if (!team) return;
-
-    tournament.winners.push(team);
-  }
-
-  /* ===== CODE ===== */
-
-  if (cmd === "code") {
-    if (!isStaff(msg.member)) return;
-    if (!tournament) return;
-
-    const code = args[1];
-    const mention = msg.mentions.users.first();
-    if (!code || !mention) return;
-
-    const team = tournament.teams.find(t => t.includes(mention.id));
-    if (!team) return;
-
-    for (const id of team) {
-      const user = await client.users.fetch(id);
-      await user.send(`🎮 Match Code: **${code}**`).catch(() => {});
-    }
-
-    msg.delete().catch(() => {});
-    msg.channel.send("✅ Code Sent.");
+    return msg.reply("Team Registered!");
   }
 });
 
-/* ================= BUTTONS ================= */
-
+/* ================= BUTTON HANDLER ================= */
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
   if (!tournament) return;
-
-  const panel = await interaction.channel.messages.fetch(tournament.panelMessage);
 
   if (interaction.customId === "register") {
     if (tournament.mode !== "1v1")
@@ -305,9 +230,10 @@ client.on("interactionCreate", async interaction => {
     tournament.players.push(interaction.user.id);
     tournament.teams.push([interaction.user.id]);
 
+    const panel = await interaction.channel.messages.fetch(tournament.panelMessage);
     await panel.edit({ embeds: [buildEmbed()], components: [buildButtons()] });
 
-    interaction.reply({ content: "Registered!", ephemeral: true });
+    return interaction.reply({ content: "Registered!", ephemeral: true });
   }
 
   if (interaction.customId === "start") {
@@ -316,10 +242,12 @@ client.on("interactionCreate", async interaction => {
 
     tournament.started = true;
 
+    const panel = await interaction.channel.messages.fetch(tournament.panelMessage);
     await panel.edit({ embeds: [buildEmbed()], components: [buildButtons()] });
 
-    interaction.reply("🔥 Tournament Started!");
+    return interaction.reply("🔥 Tournament Started!");
   }
 });
 
+/* ===== LOGIN ===== */
 client.login(process.env.TOKEN);
