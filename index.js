@@ -57,7 +57,8 @@ function createTournament(size, server, map) {
     players: [],
     matches: [],
     started: false,
-    panelId: null
+    panelId: null,
+    channelId: null
   };
 }
 
@@ -74,7 +75,7 @@ function createMatches(players) {
     const p2 = shuffled[i + 1];
 
     if (p1 && !p2)
-      matches.push({ p1, p2: null, winner: p1 }); // BYE auto win
+      matches.push({ p1, p2: null, winner: p1 }); // BYE
     else
       matches.push({ p1, p2, winner: null });
   }
@@ -124,26 +125,26 @@ function bracketEmbed() {
 function mainButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("register")
+      .setCustomId("register_btn")
       .setLabel("Register")
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId("start")
+      .setCustomId("start_btn")
       .setLabel("Start")
       .setStyle(ButtonStyle.Danger)
   );
 }
 
-function confirmUnregisterButton() {
+function unregisterConfirmButton() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("confirm_unregister")
+      .setCustomId("confirm_unregister_btn")
       .setLabel("Unregister")
       .setStyle(ButtonStyle.Danger)
   );
 }
 
-/* ================= COMMAND HANDLER ================= */
+/* ================= MESSAGE COMMANDS ================= */
 
 client.on("messageCreate", async (msg) => {
   if (!msg.guild || msg.author.bot) return;
@@ -152,7 +153,7 @@ client.on("messageCreate", async (msg) => {
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift()?.toLowerCase();
 
-  if (msg.deletable) await msg.delete().catch(() => {});
+  await msg.delete().catch(() => {});
 
   if (cmd === "1v1") {
     if (!isStaff(msg.member))
@@ -176,27 +177,38 @@ client.on("messageCreate", async (msg) => {
     });
 
     tournament.panelId = panel.id;
+    tournament.channelId = msg.channel.id;
   }
 
   if (cmd === "del") {
     if (!isStaff(msg.member))
       return msg.channel.send("❌ Staff only.");
 
+    if (!tournament)
+      return msg.channel.send("❌ No tournament running.");
+
+    try {
+      const channel = await client.channels.fetch(tournament.channelId);
+      const panel = await channel.messages.fetch(tournament.panelId);
+      await panel.delete().catch(() => {});
+    } catch {}
+
     tournament = null;
-    return msg.channel.send("🗑 Tournament deleted.");
+
+    return msg.channel.send("🗑 Tournament deleted successfully.");
   }
 });
 
-/* ================= BUTTON HANDLER ================= */
+/* ================= BUTTON HANDLER (SINGLE LISTENER) ================= */
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
   if (!tournament)
-    return interaction.reply({ content: "❌ Tournament not active.", ephemeral: true });
+    return interaction.reply({ content: "❌ No tournament running.", ephemeral: true });
 
   /* REGISTER */
-  if (interaction.customId === "register") {
+  if (interaction.customId === "register_btn") {
 
     if (tournament.started)
       return interaction.reply({ content: "❌ Tournament already started.", ephemeral: true });
@@ -204,7 +216,7 @@ client.on("interactionCreate", async (interaction) => {
     if (tournament.players.includes(interaction.user.id)) {
       return interaction.reply({
         content: "You are already registered.\nDo you want to unregister?",
-        components: [confirmUnregisterButton()],
+        components: [unregisterConfirmButton()],
         ephemeral: true
       });
     }
@@ -219,17 +231,17 @@ client.on("interactionCreate", async (interaction) => {
       ephemeral: true
     });
 
-    const panel = await interaction.channel.messages.fetch(tournament.panelId).catch(() => null);
-    if (panel) {
-      await panel.edit({
-        embeds: [registrationEmbed()],
-        components: [mainButtons()]
-      });
-    }
+    const channel = await client.channels.fetch(tournament.channelId);
+    const panel = await channel.messages.fetch(tournament.panelId);
+
+    await panel.edit({
+      embeds: [registrationEmbed()],
+      components: [mainButtons()]
+    });
   }
 
   /* CONFIRM UNREGISTER */
-  if (interaction.customId === "confirm_unregister") {
+  if (interaction.customId === "confirm_unregister_btn") {
 
     tournament.players = tournament.players.filter(
       id => id !== interaction.user.id
@@ -241,17 +253,17 @@ client.on("interactionCreate", async (interaction) => {
       embeds: []
     });
 
-    const panel = await interaction.channel.messages.fetch(tournament.panelId).catch(() => null);
-    if (panel) {
-      await panel.edit({
-        embeds: [registrationEmbed()],
-        components: [mainButtons()]
-      });
-    }
+    const channel = await client.channels.fetch(tournament.channelId);
+    const panel = await channel.messages.fetch(tournament.panelId);
+
+    await panel.edit({
+      embeds: [registrationEmbed()],
+      components: [mainButtons()]
+    });
   }
 
-  /* START (BYE ENABLED) */
-  if (interaction.customId === "start") {
+  /* START */
+  if (interaction.customId === "start_btn") {
 
     if (!isStaff(interaction.member))
       return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
@@ -264,6 +276,10 @@ client.on("interactionCreate", async (interaction) => {
       components: []
     });
   }
+});
+
+client.once("ready", () => {
+  console.log(`Logged in as ${client.user.tag}`);
 });
 
 client.login(process.env.DISCORD_TOKEN);
