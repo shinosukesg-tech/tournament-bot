@@ -21,13 +21,13 @@ const client = new Client({
   ]
 });
 
-/* ================= STATE ================= */
+/* ================= TOURNAMENT STATE ================= */
 
 let tournament = null;
 
-function createTournament() {
+function createTournament(playerCount) {
   return {
-    maxPlayers: 8,
+    maxPlayers: playerCount,
     server: "INW",
     players: [],
     round: 1,
@@ -42,7 +42,7 @@ function isStaff(member) {
   return member.roles.cache.some(r => r.name === STAFF_ROLE);
 }
 
-/* ================= BRACKET LOGIC ================= */
+/* ================= BRACKET SYSTEM ================= */
 
 function nextPowerOfTwo(n) {
   return Math.pow(2, Math.ceil(Math.log2(n)));
@@ -163,8 +163,7 @@ client.once("ready", () => {
 /* ================= COMMANDS ================= */
 
 client.on("messageCreate", async (msg) => {
-  if (!msg.guild) return;
-  if (msg.author.bot) return;
+  if (!msg.guild || msg.author.bot) return;
   if (!msg.content.startsWith(PREFIX)) return;
 
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
@@ -186,8 +185,7 @@ client.on("messageCreate", async (msg) => {
     let playerCount = parseInt(args[0]);
     if (!playerCount || playerCount < 2) playerCount = 8;
 
-    tournament = createTournament();
-    tournament.maxPlayers = playerCount;
+    tournament = createTournament(playerCount);
 
     const panel = await msg.channel.send({
       embeds: [panelEmbed()],
@@ -198,6 +196,7 @@ client.on("messageCreate", async (msg) => {
   }
 
   if (cmd === "win" || cmd === "qualify") {
+
     if (!tournament || !tournament.started) return;
     if (!isStaff(msg.member)) return;
 
