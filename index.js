@@ -57,7 +57,7 @@ function shuffle(array) {
 
 function progressBar(done, total) {
   const size = 10;
-  const percent = done / total;
+  const percent = total === 0 ? 0 : done / total;
   const progress = Math.round(size * percent);
   return "🟩".repeat(progress) + "⬜".repeat(size - progress);
 }
@@ -141,9 +141,6 @@ client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
   if (!msg.content.startsWith(PREFIX)) return;
 
-  // AUTO DELETE COMMAND MESSAGE
-  setTimeout(() => msg.delete().catch(() => {}), 1500);
-
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
@@ -161,14 +158,8 @@ client.on("messageCreate", async msg => {
     tournament.channelId = msg.channel.id;
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("register")
-        .setLabel("Register")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId("start")
-        .setLabel("Start")
-        .setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId("register").setLabel("Register").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("start").setLabel("Start").setStyle(ButtonStyle.Primary)
     );
 
     const panel = await msg.channel.send({
@@ -177,14 +168,17 @@ client.on("messageCreate", async msg => {
     });
 
     tournament.messageId = panel.id;
+  }
+
+  if (!tournament) {
+    if (msg.deletable) setTimeout(() => msg.delete().catch(() => {}), 3000);
     return;
   }
 
-  if (!tournament) return;
-
-  /* SEND CODE TO ALL */
+  /* SEND CODE */
   if (cmd === "code") {
     if (!isStaff(msg.member)) return;
+
     const roomCode = args[0];
     if (!roomCode) return;
 
@@ -223,6 +217,7 @@ client.on("messageCreate", async msg => {
   /* QUALIFY */
   if (cmd === "qual" || cmd === "win") {
     if (!isStaff(msg.member)) return;
+
     const mention = msg.mentions.users.first();
     if (!mention) return;
 
@@ -244,28 +239,27 @@ client.on("messageCreate", async msg => {
           .setTitle("🏆 SHINTOURS GRAND CHAMPION 🏆")
           .setThumbnail(champ.displayAvatarURL({ dynamic: true, size: 1024 }))
           .setImage(BANNER)
-          .setDescription(`
-👑 **Champion**
-${champ}
-
-🔥 Dominated all rounds!
-`)
+          .setDescription(`👑 **Champion**\n${champ}\n\n🔥 Dominated all rounds!`)
           .setTimestamp();
 
         await msg.channel.send({ embeds: [championEmbed] });
         tournament = null;
-        return;
+      } else {
+        tournament.round++;
+        tournament.matches = generateMatches(winners);
+
+        const bracketMsg = await client.channels.cache
+          .get(tournament.channelId)
+          .messages.fetch(tournament.messageId);
+
+        await bracketMsg.edit({ embeds: [bracketEmbed()] });
       }
-
-      tournament.round++;
-      tournament.matches = generateMatches(winners);
     }
+  }
 
-    const bracketMsg = await client.channels.cache
-      .get(tournament.channelId)
-      .messages.fetch(tournament.messageId);
-
-    bracketMsg.edit({ embeds: [bracketEmbed()] });
+  // SAFE DELETE AFTER EXECUTION
+  if (msg.deletable) {
+    setTimeout(() => msg.delete().catch(() => {}), 3000);
   }
 });
 
@@ -274,7 +268,6 @@ ${champ}
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
 
-  /* DISMISS DM */
   if (interaction.customId.startsWith("dismiss_")) {
     const ownerId = interaction.customId.split("_")[1];
     if (interaction.user.id !== ownerId)
@@ -285,7 +278,6 @@ client.on("interactionCreate", async interaction => {
 
   if (!tournament) return;
 
-  /* REGISTER */
   if (interaction.customId === "register") {
 
     if (tournament.locked)
@@ -304,26 +296,12 @@ client.on("interactionCreate", async interaction => {
 
     const panel = await interaction.channel.messages.fetch(tournament.messageId);
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("register")
-        .setLabel(tournament.locked ? "Locked" : "Register")
-        .setStyle(tournament.locked ? ButtonStyle.Secondary : ButtonStyle.Success)
-        .setDisabled(tournament.locked),
-
-      new ButtonBuilder()
-        .setCustomId("start")
-        .setLabel("Start")
-        .setStyle(ButtonStyle.Primary)
-    );
-
     await panel.edit({
       embeds: [registrationEmbed()],
-      components: [row]
+      components: interaction.message.components
     });
   }
 
-  /* START */
   if (interaction.customId === "start") {
     if (!isStaff(interaction.member)) return;
     if (tournament.started) return;
