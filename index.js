@@ -64,16 +64,21 @@ function createTournament(size, server, map) {
 function createMatches(players) {
   const shuffled = [...players].sort(() => Math.random() - 0.5);
   const size = nextPowerOfTwo(shuffled.length);
+
   while (shuffled.length < size) shuffled.push(null);
 
   const matches = [];
+
   for (let i = 0; i < shuffled.length; i += 2) {
-    matches.push({
-      p1: shuffled[i],
-      p2: shuffled[i + 1],
-      winner: null
-    });
+    const p1 = shuffled[i];
+    const p2 = shuffled[i + 1];
+
+    if (p1 && !p2)
+      matches.push({ p1, p2: null, winner: p1 }); // BYE auto win
+    else
+      matches.push({ p1, p2, winner: null });
   }
+
   return matches;
 }
 
@@ -100,7 +105,12 @@ function bracketEmbed() {
 
   tournament.matches.forEach((m, i) => {
     desc += `⚔️ Match ${i + 1}\n`;
-    desc += `<@${m.p1}> vs <@${m.p2}>\n\n`;
+
+    if (!m.p2) {
+      desc += `🆓 <@${m.p1}> (BYE)\n\n`;
+    } else {
+      desc += `<@${m.p1}> vs <@${m.p2}>\n\n`;
+    }
   });
 
   return new EmbedBuilder()
@@ -182,14 +192,10 @@ client.on("messageCreate", async (msg) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
-  if (!tournament) {
-    return interaction.reply({
-      content: "❌ Tournament not active.",
-      ephemeral: true
-    });
-  }
+  if (!tournament)
+    return interaction.reply({ content: "❌ Tournament not active.", ephemeral: true });
 
-  /* REGISTER BUTTON */
+  /* REGISTER */
   if (interaction.customId === "register") {
 
     if (tournament.started)
@@ -213,8 +219,7 @@ client.on("interactionCreate", async (interaction) => {
       ephemeral: true
     });
 
-    const channel = interaction.channel;
-    const panel = await channel.messages.fetch(tournament.panelId).catch(() => null);
+    const panel = await interaction.channel.messages.fetch(tournament.panelId).catch(() => null);
     if (panel) {
       await panel.edit({
         embeds: [registrationEmbed()],
@@ -236,8 +241,7 @@ client.on("interactionCreate", async (interaction) => {
       embeds: []
     });
 
-    const channel = interaction.channel;
-    const panel = await channel.messages.fetch(tournament.panelId).catch(() => null);
+    const panel = await interaction.channel.messages.fetch(tournament.panelId).catch(() => null);
     if (panel) {
       await panel.edit({
         embeds: [registrationEmbed()],
@@ -246,14 +250,11 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  /* START BUTTON */
+  /* START (BYE ENABLED) */
   if (interaction.customId === "start") {
 
     if (!isStaff(interaction.member))
       return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
-
-    if (tournament.players.length < 2)
-      return interaction.reply({ content: "❌ Not enough players.", ephemeral: true });
 
     tournament.started = true;
     tournament.matches = createMatches(tournament.players);
