@@ -8,13 +8,6 @@ const {
   Partials
 } = require("discord.js");
 
-/* ===== PREVENT DOUBLE INSTANCE ===== */
-if (global.botRunning) {
-  console.log("Bot already running. Stopping duplicate instance.");
-  process.exit(1);
-}
-global.botRunning = true;
-
 /* ===== CLIENT ===== */
 const client = new Client({
   intents: [
@@ -30,9 +23,6 @@ const client = new Client({
 const PREFIX = ";";
 const STAFF_ROLE = "Tournament Staff";
 const BANNER_URL = "https://cdn.discordapp.com/attachments/1415778886285000876/1467953312702922960/Event_Background_EventDash.png";
-
-/* ===== ANTI DUPLICATE MESSAGE LOCK ===== */
-const messageLock = new Set();
 
 /* ===== TOURNAMENT DATA ===== */
 let tournament = null;
@@ -117,36 +107,51 @@ client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith(PREFIX)) return;
   if (msg.author.bot) return;
 
-  /* ===== HARD DUPLICATE PREVENTION ===== */
-  if (messageLock.has(msg.id)) return;
-  messageLock.add(msg.id);
-  setTimeout(() => messageLock.delete(msg.id), 5000);
-
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
+  const cmd = args.shift()?.toLowerCase();
 
-  /* ===== HELP ===== */
+  /* ===== HELP (EMBED) ===== */
   if (cmd === "help") {
-    return msg.channel.send(`🏆 ShinCups Tournament Commands
-
+    const helpEmbed = new EmbedBuilder()
+      .setColor("#00ff88")
+      .setTitle("📖 ShinCups Tournament Help")
+      .setDescription(`
+🎮 **Create 1v1**
 ;1v1 p<number> s <server>
+
+👥 **Create 2v2**
 ;2v2
+
+👥 **Create 3v3**
 ;3v3
+
+🧑‍🤝‍🧑 **Register Team**
 ;register 2v2 @player
 ;register 3v3 @p1 @p2
-;code <code> @players (Staff)
-`);
+
+🎮 **Send Match Code (Staff Only)**
+;code <code> @players
+`)
+      .setImage(BANNER_URL);
+
+    await msg.channel.send({ embeds: [helpEmbed] });
+    return;
   }
 
-  /* ===== CODE COMMAND (EMBED FIXED) ===== */
+  /* ===== CODE COMMAND (EMBED CONFIRMATION) ===== */
   if (cmd === "code") {
-    if (!isStaff(msg.member)) return msg.reply("Staff only.");
+    if (!isStaff(msg.member)) {
+      await msg.reply("Staff only.");
+      return;
+    }
 
     const code = args[0];
     const mentionedUsers = msg.mentions.users;
 
-    if (!code || mentionedUsers.size === 0)
-      return msg.reply("Usage: ;code <code> @player1 @player2");
+    if (!code || mentionedUsers.size === 0) {
+      await msg.reply("Usage: ;code <code> @player1 @player2");
+      return;
+    }
 
     let sentTo = [];
 
@@ -169,18 +174,24 @@ client.on("messageCreate", async (msg) => {
 `)
       .setFooter({ text: "ShinCups Tournament" });
 
-    return msg.channel.send({ embeds: [embed] });
+    await msg.channel.send({ embeds: [embed] });
+    return;
   }
 
   /* ===== 1V1 ===== */
   if (cmd === "1v1") {
-    if (!isStaff(msg.member)) return msg.reply("Staff only.");
+    if (!isStaff(msg.member)) {
+      await msg.reply("Staff only.");
+      return;
+    }
 
     const pArg = args.find(a => a.startsWith("p"));
     const sIndex = args.indexOf("s");
 
-    if (!pArg || sIndex === -1 || !args[sIndex + 1])
-      return msg.reply("Use: ;1v1 p<number> s <server>");
+    if (!pArg || sIndex === -1 || !args[sIndex + 1]) {
+      await msg.reply("Use: ;1v1 p<number> s <server>");
+      return;
+    }
 
     const playerCount = parseInt(pArg.replace("p", ""));
     const server = args[sIndex + 1];
@@ -203,7 +214,10 @@ client.on("messageCreate", async (msg) => {
 
   /* ===== 2V2 / 3V3 ===== */
   if (cmd === "2v2" || cmd === "3v3") {
-    if (!isStaff(msg.member)) return msg.reply("Staff only.");
+    if (!isStaff(msg.member)) {
+      await msg.reply("Staff only.");
+      return;
+    }
 
     await deleteOldPanel(msg.channel);
 
@@ -227,14 +241,19 @@ client.on("messageCreate", async (msg) => {
     if (mode !== tournament.mode) return;
 
     const required = mode === "2v2" ? 1 : 2;
-    if (msg.mentions.users.size !== required)
-      return msg.reply(`Mention ${required} teammate(s).`);
+
+    if (msg.mentions.users.size !== required) {
+      await msg.reply(`Mention ${required} teammate(s).`);
+      return;
+    }
 
     const team = [msg.author.id, ...msg.mentions.users.map(u => u.id)];
 
     for (const id of team) {
-      if (tournament.players.includes(id))
-        return msg.reply("Player already registered.");
+      if (tournament.players.includes(id)) {
+        await msg.reply("Player already registered.");
+        return;
+      }
     }
 
     tournament.players.push(...team);
@@ -243,7 +262,8 @@ client.on("messageCreate", async (msg) => {
     const panel = await msg.channel.messages.fetch(tournament.panelMessage);
     await panel.edit({ embeds: [buildEmbed()], components: [buildButtons()] });
 
-    return msg.reply("Team Registered!");
+    await msg.reply("Team Registered!");
+    return;
   }
 });
 
