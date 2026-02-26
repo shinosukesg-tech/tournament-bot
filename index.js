@@ -29,7 +29,10 @@ const client = new Client({
 
 const PREFIX = ";";
 const STAFF_ROLE = "Tournament Staff";
-const BANNER_URL = "https://cdn.discordapp.com/attachments/1415778886285000876/1467953312702922960/Event_Background_EventDash.png?ex=69a0940f&is=699f428f&hm=5d8bcdb9d7e3a7a97b8cf1be27264a07134c6a252ed883e99ef5ddd413ffd1ab&";
+const BANNER_URL = "https://cdn.discordapp.com/attachments/1415778886285000876/1467953312702922960/Event_Background_EventDash.png";
+
+/* ===== ANTI DUPLICATE MESSAGE LOCK ===== */
+const messageLock = new Set();
 
 /* ===== TOURNAMENT DATA ===== */
 let tournament = null;
@@ -49,12 +52,10 @@ function createTournament() {
   };
 }
 
-/* ===== STAFF CHECK ===== */
 function isStaff(member) {
   return member.roles.cache.some(r => r.name === STAFF_ROLE);
 }
 
-/* ===== EMBED ===== */
 function buildEmbed() {
   return new EmbedBuilder()
     .setColor("#00ff88")
@@ -80,13 +81,11 @@ function buildButtons() {
         tournament.started ||
         tournament.players.length >= tournament.maxPlayers
       ),
-
     new ButtonBuilder()
       .setCustomId("players")
       .setLabel(`Players: ${tournament?.players.length || 0}`)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(true),
-
     new ButtonBuilder()
       .setCustomId("start")
       .setLabel("Start")
@@ -95,7 +94,6 @@ function buildButtons() {
   );
 }
 
-/* ===== DELETE OLD PANEL ===== */
 async function deleteOldPanel(channel) {
   const messages = await channel.messages.fetch({ limit: 50 });
   for (const msg of messages.values()) {
@@ -109,15 +107,20 @@ async function deleteOldPanel(channel) {
   }
 }
 
-/* ================== READY ================== */
+/* ================= READY ================= */
 client.once("ready", () => {
   console.log(`${client.user.tag} is online`);
 });
 
-/* ================== MESSAGE HANDLER (ONLY ONE) ================== */
+/* ================= MESSAGE HANDLER ================= */
 client.on("messageCreate", async (msg) => {
   if (!msg.content.startsWith(PREFIX)) return;
   if (msg.author.bot) return;
+
+  /* ===== HARD DUPLICATE PREVENTION ===== */
+  if (messageLock.has(msg.id)) return;
+  messageLock.add(msg.id);
+  setTimeout(() => messageLock.delete(msg.id), 5000);
 
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
@@ -131,13 +134,45 @@ client.on("messageCreate", async (msg) => {
 ;3v3
 ;register 2v2 @player
 ;register 3v3 @p1 @p2
-;win @player (Staff)
-;qualify @player (Staff)
-;code 1v1 <code> @player (Staff)
+;code <code> @players (Staff)
 `);
   }
 
-  /* ===== CREATE 1V1 ===== */
+  /* ===== CODE COMMAND (EMBED FIXED) ===== */
+  if (cmd === "code") {
+    if (!isStaff(msg.member)) return msg.reply("Staff only.");
+
+    const code = args[0];
+    const mentionedUsers = msg.mentions.users;
+
+    if (!code || mentionedUsers.size === 0)
+      return msg.reply("Usage: ;code <code> @player1 @player2");
+
+    let sentTo = [];
+
+    for (const user of mentionedUsers.values()) {
+      try {
+        await user.send(`🎮 Match Code: **${code}**\nServer: ${tournament?.server || "N/A"}`);
+        sentTo.push(`<@${user.id}>`);
+      } catch {}
+    }
+
+    await msg.delete().catch(() => {});
+
+    const embed = new EmbedBuilder()
+      .setColor("#00ff88")
+      .setTitle("🎮 Match Code Sent")
+      .setDescription(`
+🔐 **Code:** ${code}
+📩 **Sent To:** ${sentTo.join(", ")}
+🌍 **Server:** ${tournament?.server || "N/A"}
+`)
+      .setFooter({ text: "ShinCups Tournament" });
+
+    return msg.channel.send({ embeds: [embed] });
+  }
+
+  /* ===== 1V1 ===== */
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return msg.reply("Staff only.");
 
@@ -149,9 +184,6 @@ client.on("messageCreate", async (msg) => {
 
     const playerCount = parseInt(pArg.replace("p", ""));
     const server = args[sIndex + 1];
-
-    if (!playerCount || playerCount < 2)
-      return msg.reply("Invalid player number.");
 
     await deleteOldPanel(msg.channel);
 
@@ -169,7 +201,7 @@ client.on("messageCreate", async (msg) => {
     return;
   }
 
-  /* ===== CREATE 2V2 / 3V3 ===== */
+  /* ===== 2V2 / 3V3 ===== */
   if (cmd === "2v2" || cmd === "3v3") {
     if (!isStaff(msg.member)) return msg.reply("Staff only.");
 
@@ -187,7 +219,7 @@ client.on("messageCreate", async (msg) => {
     return;
   }
 
-  /* ===== REGISTER 2V2 / 3V3 ===== */
+  /* ===== REGISTER ===== */
   if (cmd === "register") {
     if (!tournament) return;
 
