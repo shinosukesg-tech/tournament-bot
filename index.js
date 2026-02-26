@@ -283,3 +283,4 @@ client.on("interactionCreate", async interaction => {
 
 /* ===== LOGIN ===== */
 client.login(process.env.TOKEN);
+
