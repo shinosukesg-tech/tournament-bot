@@ -89,6 +89,7 @@ function registrationEmbed() {
 🌍 Server: **${tournament.server}**
 🗺 Map: **${tournament.map}**
 👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
+📌 Status: **${tournament.started ? "Started" : "Open Registration"}**
 ━━━━━━━━━━━━━━━━━━
 `)
     .setImage(BANNER);
@@ -180,11 +181,19 @@ client.on("messageCreate", async (msg) => {
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
-  if (!tournament)
-    return interaction.reply({ content: "No tournament running.", ephemeral: true });
 
-  /* REGISTER */
+  if (!tournament) {
+    return interaction.reply({
+      content: "❌ Tournament not active.",
+      ephemeral: true
+    });
+  }
+
+  /* REGISTER BUTTON */
   if (interaction.customId === "register") {
+
+    if (tournament.started)
+      return interaction.reply({ content: "❌ Tournament already started.", ephemeral: true });
 
     if (tournament.players.includes(interaction.user.id)) {
       return interaction.reply({
@@ -195,14 +204,23 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     if (tournament.players.length >= tournament.maxPlayers)
-      return interaction.reply({ content: "Tournament full.", ephemeral: true });
+      return interaction.reply({ content: "❌ Tournament full.", ephemeral: true });
 
     tournament.players.push(interaction.user.id);
 
-    return interaction.update({
-      embeds: [registrationEmbed()],
-      components: [mainButtons()]
+    await interaction.reply({
+      content: "✅ Successfully registered!",
+      ephemeral: true
     });
+
+    const channel = interaction.channel;
+    const panel = await channel.messages.fetch(tournament.panelId).catch(() => null);
+    if (panel) {
+      await panel.edit({
+        embeds: [registrationEmbed()],
+        components: [mainButtons()]
+      });
+    }
   }
 
   /* CONFIRM UNREGISTER */
@@ -212,27 +230,35 @@ client.on("interactionCreate", async (interaction) => {
       id => id !== interaction.user.id
     );
 
-    return interaction.update({
+    await interaction.update({
       content: "✅ You have been unregistered.",
       components: [],
-      embeds: [],
-      ephemeral: true
+      embeds: []
     });
+
+    const channel = interaction.channel;
+    const panel = await channel.messages.fetch(tournament.panelId).catch(() => null);
+    if (panel) {
+      await panel.edit({
+        embeds: [registrationEmbed()],
+        components: [mainButtons()]
+      });
+    }
   }
 
-  /* START */
+  /* START BUTTON */
   if (interaction.customId === "start") {
 
     if (!isStaff(interaction.member))
       return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
 
     if (tournament.players.length < 2)
-      return interaction.reply({ content: "Not enough players.", ephemeral: true });
+      return interaction.reply({ content: "❌ Not enough players.", ephemeral: true });
 
     tournament.started = true;
     tournament.matches = createMatches(tournament.players);
 
-    return interaction.update({
+    await interaction.update({
       embeds: [bracketEmbed()],
       components: []
     });
