@@ -52,8 +52,8 @@ function nextPowerOfTwo(n) {
 function createTournament(size, server, map) {
   return {
     maxPlayers: size,
-    server: server,
-    map: map,
+    server,
+    map,
     players: [],
     matches: [],
     round: 1,
@@ -102,37 +102,8 @@ function registrationEmbed() {
     .setImage(BANNER);
 }
 
-function helpEmbed() {
-  return new EmbedBuilder()
-    .setColor("#5865F2")
-    .setTitle("🏆 ShinTours Help")
-    .setDescription(`
-━━━━━━━━━━━━━━━━━━
-🎮 Commands
-━━━━━━━━━━━━━━━━━━
-
-;1v1 <players> <server> <map>
-;del
-;help
-
-━━━━━━━━━━━━━━━━━━
-Staff required for:
-1v1 • del
-━━━━━━━━━━━━━━━━━━
-`)
-    .setImage(BANNER);
-}
-
-function progressBar() {
-  const total = tournament.matches.length;
-  const done = tournament.matches.filter(m => m.winner).length;
-  const percent = total === 0 ? 0 : Math.floor((done / total) * 100);
-  const filled = Math.floor(percent / 10);
-  return \`█\`.repeat(filled) + \`░\`.repeat(10 - filled) + \` ${percent}%\`;
-}
-
 function bracketEmbed() {
-  let desc = `🏆 **ShinTours Tournament Bracket**\n`;
+  let desc = `🏆 ShinTours Tournament Bracket\n`;
   desc += `━━━━━━━━━━━━━━━━━━\n`;
   desc += `🎯 Round ${tournament.round}\n`;
   desc += `🌍 Server: ${tournament.server}\n`;
@@ -140,7 +111,7 @@ function bracketEmbed() {
   desc += `━━━━━━━━━━━━━━━━━━\n\n`;
 
   tournament.matches.forEach((m, i) => {
-    desc += `⚔️ **Match ${i + 1}**\n`;
+    desc += `⚔️ Match ${i + 1}\n`;
 
     if (!m.p2) {
       desc += `🆓 <@${m.p1}> (BYE)\n\n`;
@@ -151,13 +122,10 @@ function bracketEmbed() {
       desc += `<@${m.p1}> vs <@${m.p2}>\n\n`;
     } else {
       const loser = m.p1 === m.winner ? m.p2 : m.p1;
-      desc += `🏆 **<@${m.winner}>**\n`;
+      desc += `🏆 <@${m.winner}>\n`;
       desc += `❌ ~~<@${loser}>~~\n\n`;
     }
   });
-
-  desc += `━━━━━━━━━━━━━━━━━━\n📊 Progress\n`;
-  desc += progressBar();
 
   return new EmbedBuilder()
     .setColor("#9b59b6")
@@ -165,16 +133,14 @@ function bracketEmbed() {
     .setImage(BANNER);
 }
 
-function buttons() {
+/* ================= BUTTONS ================= */
+
+function mainButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("register")
       .setLabel("Register")
       .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId("unregister")
-      .setLabel("Unregister")
-      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("start")
       .setLabel("Start")
@@ -182,7 +148,18 @@ function buttons() {
   );
 }
 
-/* ================= COMMANDS ================= */
+function unregisterButton() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("confirm_unregister")
+      .setLabel("Unregister")
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+/* ================= COMMAND HANDLER ================= */
+
+client.removeAllListeners("messageCreate");
 
 client.on("messageCreate", async (msg) => {
   if (!msg.guild || msg.author.bot) return;
@@ -191,22 +168,7 @@ client.on("messageCreate", async (msg) => {
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift()?.toLowerCase();
 
-  if (msg.deletable) msg.delete().catch(() => {});
-
-  if (cmd === "help") {
-    return msg.channel.send({ embeds: [helpEmbed()] });
-  }
-
-  if (cmd === "del") {
-    if (!isStaff(msg.member))
-      return msg.channel.send("❌ Staff only.");
-
-    if (!tournament)
-      return msg.channel.send("❌ No tournament running.");
-
-    tournament = null;
-    return msg.channel.send("🗑 Tournament deleted.");
-  }
+  if (msg.deletable) await msg.delete().catch(() => {});
 
   if (cmd === "1v1") {
     if (!isStaff(msg.member))
@@ -226,10 +188,18 @@ client.on("messageCreate", async (msg) => {
 
     const panel = await msg.channel.send({
       embeds: [registrationEmbed()],
-      components: [buttons()]
+      components: [mainButtons()]
     });
 
     tournament.panelId = panel.id;
+  }
+
+  if (cmd === "del") {
+    if (!isStaff(msg.member))
+      return msg.channel.send("❌ Staff only.");
+
+    tournament = null;
+    return msg.channel.send("🗑 Tournament deleted.");
   }
 });
 
@@ -240,12 +210,19 @@ client.on("interactionCreate", async (interaction) => {
   if (!tournament)
     return interaction.reply({ content: "❌ No tournament running.", ephemeral: true });
 
+  /* REGISTER BUTTON */
   if (interaction.customId === "register") {
+
     if (tournament.started)
       return interaction.reply({ content: "❌ Tournament already started.", ephemeral: true });
 
-    if (tournament.players.includes(interaction.user.id))
-      return interaction.reply({ content: "⚠️ Already registered.", ephemeral: true });
+    if (tournament.players.includes(interaction.user.id)) {
+      return interaction.reply({
+        content: "You are already registered.\nDo you want to unregister?",
+        components: [unregisterButton()],
+        ephemeral: true
+      });
+    }
 
     if (tournament.players.length >= tournament.maxPlayers)
       return interaction.reply({ content: "❌ Tournament full.", ephemeral: true });
@@ -254,25 +231,29 @@ client.on("interactionCreate", async (interaction) => {
 
     return interaction.update({
       embeds: [registrationEmbed()],
-      components: [buttons()]
+      components: [mainButtons()]
     });
   }
 
-  if (interaction.customId === "unregister") {
-    tournament.players = tournament.players.filter(id => id !== interaction.user.id);
+  /* CONFIRM UNREGISTER */
+  if (interaction.customId === "confirm_unregister") {
+
+    tournament.players = tournament.players.filter(
+      id => id !== interaction.user.id
+    );
 
     return interaction.update({
-      embeds: [registrationEmbed()],
-      components: [buttons()]
+      content: "✅ You have been unregistered.",
+      components: [],
+      embeds: [],
+      ephemeral: true
     });
   }
 
+  /* START BUTTON */
   if (interaction.customId === "start") {
     if (!isStaff(interaction.member))
       return interaction.reply({ content: "❌ Staff only.", ephemeral: true });
-
-    if (tournament.started)
-      return interaction.reply({ content: "⚠️ Already started.", ephemeral: true });
 
     if (tournament.players.length < 2)
       return interaction.reply({ content: "❌ Not enough players.", ephemeral: true });
