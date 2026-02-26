@@ -24,6 +24,7 @@ const client = new Client({
 /* ================= TOURNAMENT STATE ================= */
 
 let tournament = null;
+let commandLock = false; // 🔥 Anti-duplicate lock
 
 function createTournament(playerCount) {
   return {
@@ -175,11 +176,13 @@ client.on("messageCreate", async (msg) => {
 
     if (!isStaff(msg.member)) return;
 
-    if (tournament && tournament.panelId) {
-      try {
-        const oldPanel = await msg.channel.messages.fetch(tournament.panelId);
-        await oldPanel.delete();
-      } catch {}
+    // 🔥 Prevent double execution
+    if (commandLock) return;
+    commandLock = true;
+    setTimeout(() => commandLock = false, 2000);
+
+    if (tournament && !tournament.started) {
+      return msg.channel.send("⚠️ A tournament is already open.");
     }
 
     let playerCount = parseInt(args[0]);
@@ -232,7 +235,6 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply({ content: "❌ Tournament is full.", ephemeral: true });
 
     tournament.players.push(interaction.user.id);
-
     await interaction.reply({ content: "✅ Successfully registered!", ephemeral: true });
   }
 
@@ -263,7 +265,6 @@ client.on("interactionCreate", async (interaction) => {
     });
 
     tournament.bracketId = bracketMsg.id;
-
     await interaction.reply({ content: "Tournament started!", ephemeral: true });
   }
 
