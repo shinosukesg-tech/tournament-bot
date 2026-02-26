@@ -1,28 +1,25 @@
 require("dotenv").config();
 
-/* ================= UPTIME SERVER ================= */
+/* ================= EXPRESS ================= */
 const express = require("express");
 const app = express();
-
-app.get("/", (req, res) => {
-  res.send("Bot is alive!");
-});
-
-app.listen(process.env.PORT || 3000, () => {
-  console.log("Web server running");
-});
-/* ================================================= */
+app.get("/", (req, res) => res.send("Bot Alive"));
+app.listen(process.env.PORT || 3000);
+/* =========================================== */
 
 const {
   Client,
   GatewayIntentBits,
-  Partials,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  PermissionsBitField,
+  ButtonStyle
 } = require("discord.js");
+
+const PREFIX = ";";
+const STAFF_ROLE = "Tournament Staff";
+const BANNER =
+  "https://media.discordapp.net/attachments/1343286197346111558/1350446868064374845/Event_Background_BlockDash.png";
 
 const client = new Client({
   intents: [
@@ -30,290 +27,308 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.DirectMessages,
-  ],
-  partials: [Partials.Channel],
+    GatewayIntentBits.DirectMessages
+  ]
 });
 
 let tournament = null;
 
 /* ================= UTIL ================= */
 
-function progressBar(current, total) {
-  const percent = current / total;
-  const filled = Math.round(percent * 10);
-  return "🟩".repeat(filled) + "⬜".repeat(10 - filled);
+function isStaff(member) {
+  return member.roles.cache.some(r => r.name === STAFF_ROLE);
 }
 
-function shuffle(array) {
-  return array.sort(() => Math.random() - 0.5);
+function nextPowerOfTwo(n) {
+  return Math.pow(2, Math.ceil(Math.log2(n)));
 }
 
-/* ================= READY ================= */
+function generateProgressBar(done, total) {
+  const percent = Math.floor((done / total) * 10);
+  return "🟩".repeat(percent) + "⬜".repeat(10 - percent);
+}
 
-client.once("ready", () => {
-  console.log(`${client.user.tag} is online`);
-});
+function createMatches(players) {
+  const matches = [];
+  for (let i = 0; i < players.length; i += 2) {
+    matches.push({
+      p1: players[i],
+      p2: players[i + 1] || null,
+      winner: null
+    });
+  }
+  return matches;
+}
 
-/* ================= MESSAGE COMMANDS ================= */
+/* ================= EMBEDS ================= */
 
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-  if (!message.content.startsWith(";")) return;
+function helpEmbed() {
+  return new EmbedBuilder()
+    .setColor("#3498db")
+    .setTitle("📖 Tournament Help")
+    .setDescription(`
+━━━━━━━━━━━━━━━━━━
+;1v1 <players> <server> <map>
+;code <roomcode> @player
+;qual @player
+;win @player
+;del
+━━━━━━━━━━━━━━━━━━
+`)
+    .setImage(BANNER);
+}
 
-  const args = message.content.slice(1).trim().split(/ +/);
+function registrationEmbed() {
+  return new EmbedBuilder()
+    .setColor("#00ff88")
+    .setTitle("🏆 ShinTours Tournament")
+    .setDescription(`
+🌍 Server: **${tournament.server}**
+🗺 Map: **${tournament.map}**
+
+👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
+📌 Status: **${tournament.started ? "Started" : "Open Registration"}**
+`)
+    .setImage(BANNER);
+}
+
+function bracketEmbed() {
+  let text = "";
+
+  tournament.matches.forEach((m, i) => {
+    text += `⚔️ Match ${i + 1}\n`;
+
+    if (!m.p2) {
+      text += `🆓 <@${m.p1}> (BYE) ✅\n\n`;
+    } else if (!m.winner) {
+      text += `<@${m.p1}> vs <@${m.p2}>\n\n`;
+    } else {
+      const loser = m.p1 === m.winner ? m.p2 : m.p1;
+      text += `🏆 <@${m.winner}> ✅\n❌ ~~<@${loser}>~~\n\n`;
+    }
+  });
+
+  text += `\n📊 Progress:\n${generateProgressBar(
+    tournament.completed,
+    tournament.totalMatches
+  )}`;
+
+  return new EmbedBuilder()
+    .setColor("#9b59b6")
+    .setTitle("🏆 Tournament Bracket")
+    .setDescription(text)
+    .setImage(BANNER);
+}
+
+function winnerEmbed(winnerId) {
+  return new EmbedBuilder()
+    .setColor("Gold")
+    .setTitle("🎉 TOURNAMENT WINNER 🎉")
+    .setDescription(`🏆 Congratulations <@${winnerId}> 🏆`)
+    .setImage(BANNER);
+}
+
+/* ================= COMMANDS ================= */
+
+client.on("messageCreate", async (msg) => {
+  if (!msg.guild || msg.author.bot) return;
+  if (!msg.content.startsWith(PREFIX)) return;
+
+  const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
-  /* ===== HELP ===== */
+  await msg.delete().catch(() => {});
+
   if (cmd === "help") {
-    const embed = new EmbedBuilder()
-      .setColor("#00b0f4")
-      .setTitle("📖 Tournament Help")
-      .setDescription(`
-\`;1v1 <server> <map>\` - Create tournament  
-\`;code <roomcode> @player\` - Send match code  
-\`;qual @player\` - Qualify player  
-\`;win @player\` - Same as qual (final)  
-\`;del\` - Delete your command
-      `)
-      .setFooter({ text: "ShinTours System" })
-      .setTimestamp();
-
-    return message.reply({ embeds: [embed] });
+    return msg.channel.send({ embeds: [helpEmbed()] });
   }
 
-  /* ===== DELETE ===== */
-  if (cmd === "del") {
-    await message.delete().catch(() => {});
-    return;
-  }
-
-  /* ===== CREATE 1v1 ===== */
   if (cmd === "1v1") {
-    const server = args[0];
-    const map = args[1];
+    if (!isStaff(msg.member)) return msg.channel.send("❌ Staff only.");
+    if (tournament) return msg.channel.send("⚠️ Tournament already exists.");
 
-    if (!server || !map)
-      return message.reply("Usage: `;1v1 <server> <map>`");
+    const size = parseInt(args[0]);
+    const server = args[1];
+    const map = args.slice(2).join(" ");
+
+    if (!size || !server || !map)
+      return msg.channel.send("Usage: ;1v1 <players> <server> <map>");
 
     tournament = {
+      maxPlayers: size,
       server,
       map,
       players: [],
       matches: [],
-      round: 1,
-      maxPlayers: 16,
       started: false,
+      messageId: null,
+      channelId: msg.channel.id,
+      totalMatches: 0,
+      completed: 0
     };
 
-    const embed = new EmbedBuilder()
-      .setColor("#00b0f4")
-      .setTitle("🏆 1v1 Tournament")
-      .setDescription(`
-🌍 **Server:** ${server}
-🗺 **Map:** ${map}
-
-👥 Players: 0/${tournament.maxPlayers}
-📊 ${progressBar(0, tournament.maxPlayers)}
-      `);
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("register")
-        .setLabel("Register")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId("start")
-        .setLabel("Start")
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    const msg = await message.channel.send({
-      embeds: [embed],
-      components: [row],
+    const panel = await msg.channel.send({
+      embeds: [registrationEmbed()],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId("register")
+            .setLabel("Register")
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId("start")
+            .setLabel("Start")
+            .setStyle(ButtonStyle.Danger)
+        )
+      ]
     });
 
-    tournament.messageId = msg.id;
+    tournament.messageId = panel.id;
   }
 
-  /* ===== CODE ===== */
-  if (cmd === "code") {
-    const roomCode = args[0];
-    const mentioned = message.mentions.users.first();
+  if (cmd === "del") {
+    if (!isStaff(msg.member)) return msg.channel.send("❌ Staff only.");
+    if (!tournament) return msg.channel.send("❌ No tournament.");
 
-    if (!roomCode || !mentioned)
-      return message.reply("Usage: `;code <roomcode> @player`");
+    try {
+      const channel = await client.channels.fetch(tournament.channelId);
+      const message = await channel.messages.fetch(tournament.messageId);
+      await message.delete().catch(() => {});
+    } catch {}
+
+    tournament = null;
+    msg.channel.send("🗑 Tournament deleted.");
+  }
+
+  if (cmd === "code") {
+    if (!isStaff(msg.member)) return msg.channel.send("❌ Staff only.");
+    if (!tournament || !tournament.started)
+      return msg.channel.send("❌ No active tournament.");
+
+    const roomCode = args[0];
+    const mention = msg.mentions.users.first();
+    if (!roomCode || !mention)
+      return msg.channel.send("Usage: ;code <roomcode> @player");
 
     const match = tournament.matches.find(
-      (m) =>
-        m.players.includes(mentioned.id) &&
-        !m.finished
+      m => !m.winner && (m.p1 === mention.id || m.p2 === mention.id)
     );
 
-    if (!match) return message.reply("Match not found.");
+    if (!match) return msg.channel.send("❌ Player not in active match.");
 
-    const opponentId = match.players.find((id) => id !== mentioned.id);
-    const opponent = await client.users.fetch(opponentId);
+    const players = [match.p1, match.p2].filter(Boolean);
 
-    const embed = new EmbedBuilder()
-      .setColor("#3498db")
-      .setTitle("🎮 Match Room Details")
-      .setDescription(`
-🌍 **Server:** ${tournament.server}
-🗺 **Map:** ${tournament.map}
+    for (const id of players) {
+      try {
+        const user = await client.users.fetch(id);
+        const embed = new EmbedBuilder()
+          .setColor("#00ff88")
+          .setTitle("🔒 Match Room Code")
+          .setDescription(`
+🌍 Server: **${tournament.server}**
+🗺 Map: **${tournament.map}**
 
-🔒 **Code:**
+🔒 Code:
 \`\`\`
 ${roomCode}
 \`\`\`
 
 ⏳ You have 2 minutes to join.
-      `)
-      .setTimestamp();
+`);
+        await user.send({ embeds: [embed] });
+      } catch {}
+    }
 
-    await mentioned.send({ embeds: [embed] }).catch(() => {});
-    await opponent.send({ embeds: [embed] }).catch(() => {});
-
-    return message.reply("✅ Code sent to both players.");
+    msg.channel.send("✅ Code sent to both opponents.");
   }
 
-  /* ===== QUAL / WIN ===== */
   if (cmd === "qual" || cmd === "win") {
-    const mentioned = message.mentions.users.first();
-    if (!mentioned) return;
+    if (!isStaff(msg.member)) return msg.channel.send("❌ Staff only.");
+    if (!tournament || !tournament.started)
+      return msg.channel.send("❌ No active tournament.");
+
+    const mention = msg.mentions.users.first();
+    if (!mention) return msg.channel.send("Mention a player.");
 
     const match = tournament.matches.find(
-      (m) => m.players.includes(mentioned.id) && !m.finished
+      m => !m.winner && (m.p1 === mention.id || m.p2 === mention.id)
     );
-    if (!match) return;
 
-    match.finished = true;
-    match.winner = mentioned.id;
+    if (!match) return msg.channel.send("❌ Player not in active match.");
 
-    const embed = new EmbedBuilder()
-      .setColor("#2ecc71")
-      .setTitle("🎉 Match Finished")
-      .setDescription(`🥇 Winner: ${mentioned}`)
-      .setTimestamp();
+    if (match.winner)
+      return msg.channel.send("⚠️ Winner already declared.");
 
-    message.channel.send({ embeds: [embed] });
+    match.winner = mention.id;
+    tournament.completed++;
 
-    advanceWinner(mentioned.id, message.channel);
+    const winners = tournament.matches
+      .filter(m => m.winner)
+      .map(m => m.winner);
+
+    if (winners.length === tournament.matches.length) {
+      if (winners.length === 1) {
+        msg.channel.send({ embeds: [winnerEmbed(winners[0])] });
+        tournament = null;
+        return;
+      }
+
+      tournament.matches = createMatches(winners);
+      tournament.totalMatches = tournament.matches.length;
+      tournament.completed = 0;
+    }
+
+    msg.channel.send({ embeds: [bracketEmbed()] });
   }
 });
 
-/* ================= BUTTON HANDLER ================= */
+/* ================= BUTTONS ================= */
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
-  if (!tournament) return;
+  if (!tournament)
+    return interaction.reply({ content: "No tournament.", ephemeral: true });
 
   if (interaction.customId === "register") {
-    if (tournament.players.includes(interaction.user.id)) {
-      const confirmRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("confirm_unreg")
-          .setLabel("Unregister")
-          .setStyle(ButtonStyle.Danger)
-      );
+    if (tournament.started)
+      return interaction.reply({ content: "Already started.", ephemeral: true });
 
-      return interaction.reply({
-        content: "Do you want to unregister?",
-        components: [confirmRow],
-        ephemeral: true,
-      });
+    if (tournament.players.includes(interaction.user.id)) {
+      tournament.players = tournament.players.filter(
+        id => id !== interaction.user.id
+      );
+      await interaction.reply({ content: "Unregistered.", ephemeral: true });
+    } else {
+      if (tournament.players.length >= tournament.maxPlayers)
+        return interaction.reply({ content: "Tournament full.", ephemeral: true });
+
+      tournament.players.push(interaction.user.id);
+      await interaction.reply({ content: "Registered.", ephemeral: true });
     }
 
-    tournament.players.push(interaction.user.id);
-
-    const embed = EmbedBuilder.from(
-      interaction.message.embeds[0]
-    ).setDescription(`
-🌍 **Server:** ${tournament.server}
-🗺 **Map:** ${tournament.map}
-
-👥 Players: ${tournament.players.length}/${tournament.maxPlayers}
-📊 ${progressBar(
-      tournament.players.length,
-      tournament.maxPlayers
-    )}
-    `);
-
-    await interaction.update({ embeds: [embed] });
-  }
-
-  if (interaction.customId === "confirm_unreg") {
-    tournament.players = tournament.players.filter(
-      (id) => id !== interaction.user.id
-    );
-    await interaction.reply({
-      content: "❌ Unregistered.",
-      ephemeral: true,
-    });
+    const channel = await client.channels.fetch(tournament.channelId);
+    const message = await channel.messages.fetch(tournament.messageId);
+    await message.edit({ embeds: [registrationEmbed()] });
   }
 
   if (interaction.customId === "start") {
-    if (
-      !interaction.member.permissions.has(
-        PermissionsBitField.Flags.ManageGuild
-      )
-    )
-      return interaction.reply({
-        content: "Staff only.",
-        ephemeral: true,
-      });
-
-    if (tournament.started)
-      return interaction.reply({
-        content: "Already started.",
-        ephemeral: true,
-      });
+    if (!isStaff(interaction.member))
+      return interaction.reply({ content: "Staff only.", ephemeral: true });
 
     tournament.started = true;
+    tournament.matches = createMatches(tournament.players);
+    tournament.totalMatches = tournament.matches.length;
+    tournament.completed = 0;
 
-    const shuffled = shuffle(tournament.players);
-
-    while (shuffled.length > 0) {
-      const p1 = shuffled.shift();
-      const p2 = shuffled.shift();
-
-      if (!p2) {
-        interaction.channel.send(
-          `🎉 <@${p1}> gets BYE and auto qualifies.`
-        );
-        advanceWinner(p1, interaction.channel);
-      } else {
-        tournament.matches.push({
-          players: [p1, p2],
-          finished: false,
-        });
-
-        interaction.channel.send(
-          `⚔️ <@${p1}> vs <@${p2}>`
-        );
-      }
-    }
-
-    interaction.reply({ content: "Tournament Started!", ephemeral: true });
+    await interaction.update({
+      embeds: [bracketEmbed()],
+      components: []
+    });
   }
 });
 
-/* ================= ADVANCE ================= */
-
-function advanceWinner(userId, channel) {
-  if (!tournament.nextRound) tournament.nextRound = [];
-  tournament.nextRound.push(userId);
-
-  if (tournament.nextRound.length === 2) {
-    const [p1, p2] = tournament.nextRound;
-    tournament.matches.push({
-      players: [p1, p2],
-      finished: false,
-    });
-
-    channel.send(`⚔️ <@${p1}> vs <@${p2}>`);
-    tournament.nextRound = [];
-  }
-}
+client.once("ready", () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
 
 client.login(process.env.DISCORD_TOKEN);
