@@ -73,7 +73,7 @@ client.on("messageCreate", async (message) => {
 \`;1v1 <server> <map>\` - Create tournament  
 \`;code <roomcode> @player\` - Send match code  
 \`;qual @player\` - Qualify player  
-\`;win @player\` - Declare winner  
+\`;win @player\` - Same as qual (final)  
 \`;del\` - Delete your command
       `)
       .setFooter({ text: "ShinTours System" })
@@ -88,7 +88,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  /* ===== CREATE TOURNAMENT ===== */
+  /* ===== CREATE 1v1 ===== */
   if (cmd === "1v1") {
     const server = args[0];
     const map = args[1];
@@ -101,14 +101,14 @@ client.on("messageCreate", async (message) => {
       map,
       players: [],
       matches: [],
-      nextRound: [],
+      round: 1,
       maxPlayers: 16,
       started: false,
     };
 
     const embed = new EmbedBuilder()
       .setColor("#00b0f4")
-      .setTitle("🏆 1v1 Tournament Registration")
+      .setTitle("🏆 1v1 Tournament")
       .setDescription(`
 🌍 **Server:** ${server}
 🗺 **Map:** ${map}
@@ -138,8 +138,6 @@ client.on("messageCreate", async (message) => {
 
   /* ===== CODE ===== */
   if (cmd === "code") {
-    if (!tournament) return;
-
     const roomCode = args[0];
     const mentioned = message.mentions.users.first();
 
@@ -147,8 +145,11 @@ client.on("messageCreate", async (message) => {
       return message.reply("Usage: `;code <roomcode> @player`");
 
     const match = tournament.matches.find(
-      (m) => m.players.includes(mentioned.id) && !m.finished
+      (m) =>
+        m.players.includes(mentioned.id) &&
+        !m.finished
     );
+
     if (!match) return message.reply("Match not found.");
 
     const opponentId = match.players.find((id) => id !== mentioned.id);
@@ -178,8 +179,6 @@ ${roomCode}
 
   /* ===== QUAL / WIN ===== */
   if (cmd === "qual" || cmd === "win") {
-    if (!tournament) return;
-
     const mentioned = message.mentions.users.first();
     if (!mentioned) return;
 
@@ -191,30 +190,39 @@ ${roomCode}
     match.finished = true;
     match.winner = mentioned.id;
 
-    const winEmbed = new EmbedBuilder()
+    const embed = new EmbedBuilder()
       .setColor("#2ecc71")
       .setTitle("🎉 Match Finished")
-      .setDescription(`🥇 **Winner:** ${mentioned}`)
+      .setDescription(`🥇 Winner: ${mentioned}`)
       .setTimestamp();
 
-    message.channel.send({ embeds: [winEmbed] });
+    message.channel.send({ embeds: [embed] });
 
     advanceWinner(mentioned.id, message.channel);
   }
 });
 
-/* ================= BUTTONS ================= */
+/* ================= BUTTON HANDLER ================= */
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
   if (!tournament) return;
 
   if (interaction.customId === "register") {
-    if (tournament.players.includes(interaction.user.id))
+    if (tournament.players.includes(interaction.user.id)) {
+      const confirmRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("confirm_unreg")
+          .setLabel("Unregister")
+          .setStyle(ButtonStyle.Danger)
+      );
+
       return interaction.reply({
-        content: "❌ You are already registered.",
+        content: "Do you want to unregister?",
+        components: [confirmRow],
         ephemeral: true,
       });
+    }
 
     tournament.players.push(interaction.user.id);
 
@@ -232,6 +240,16 @@ client.on("interactionCreate", async (interaction) => {
     `);
 
     await interaction.update({ embeds: [embed] });
+  }
+
+  if (interaction.customId === "confirm_unreg") {
+    tournament.players = tournament.players.filter(
+      (id) => id !== interaction.user.id
+    );
+    await interaction.reply({
+      content: "❌ Unregistered.",
+      ephemeral: true,
+    });
   }
 
   if (interaction.customId === "start") {
@@ -270,33 +288,24 @@ client.on("interactionCreate", async (interaction) => {
           finished: false,
         });
 
-        interaction.channel.send(`⚔️ <@${p1}> vs <@${p2}>`);
+        interaction.channel.send(
+          `⚔️ <@${p1}> vs <@${p2}>`
+        );
       }
     }
 
-    interaction.reply({
-      content: "Tournament Started!",
-      ephemeral: true,
-    });
+    interaction.reply({ content: "Tournament Started!", ephemeral: true });
   }
 });
 
-/* ================= ADVANCE SYSTEM ================= */
+/* ================= ADVANCE ================= */
 
 function advanceWinner(userId, channel) {
+  if (!tournament.nextRound) tournament.nextRound = [];
   tournament.nextRound.push(userId);
-
-  const unfinished = tournament.matches.filter((m) => !m.finished);
-
-  if (unfinished.length === 0 && tournament.nextRound.length === 1) {
-    announceChampion(userId, channel);
-    tournament = null;
-    return;
-  }
 
   if (tournament.nextRound.length === 2) {
     const [p1, p2] = tournament.nextRound;
-
     tournament.matches.push({
       players: [p1, p2],
       finished: false,
@@ -305,29 +314,6 @@ function advanceWinner(userId, channel) {
     channel.send(`⚔️ <@${p1}> vs <@${p2}>`);
     tournament.nextRound = [];
   }
-}
-
-/* ================= FINAL CHAMPION ================= */
-
-async function announceChampion(userId, channel) {
-  const user = await client.users.fetch(userId);
-
-  const championEmbed = new EmbedBuilder()
-    .setColor("#f1c40f")
-    .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
-    .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }))
-    .setDescription(`
-👑 **Champion:** ${user}
-
-🌍 **Server:** ${tournament.server}
-🗺 **Map:** ${tournament.map}
-
-🔥 Congratulations! You are the ultimate winner!
-    `)
-    .setFooter({ text: "ShinTours Tournament System" })
-    .setTimestamp();
-
-  channel.send({ embeds: [championEmbed] });
 }
 
 client.login(process.env.DISCORD_TOKEN);
