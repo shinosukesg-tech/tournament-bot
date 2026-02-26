@@ -10,7 +10,7 @@ const {
 
 const PREFIX = ";";
 const STAFF_ROLE = "Tournament Staff";
-const BANNER = "https://cdn.discordapp.com/attachments/1415778886285000876/1467953312702922960/Event_Background_EventDash.png";
+const BANNER = "https://media.discordapp.net/attachments/1343286197346111558/1350446868064374845/Event_Background_BlockDash.png?ex=69a0e667&is=699f94e7&hm=10ab2164394c100bf27486a0ca4704b70df77cd768bbbf60710956c6f6739260&";
 
 const client = new Client({
   intents: [
@@ -21,19 +21,22 @@ const client = new Client({
   ]
 });
 
-/* ================= TOURNAMENT STATE ================= */
+/* ================= STATE ================= */
 
 let tournament = null;
 
-function createTournament() {
+function createTournament(mode = "1v1") {
   return {
+    mode,
     maxPlayers: 8,
     server: "INW",
     players: [],
+    teams: [],
     round: 1,
     matches: [],
     started: false,
-    panelId: null
+    panelId: null,
+    bracketId: null
   };
 }
 
@@ -41,7 +44,7 @@ function isStaff(member) {
   return member.roles.cache.some(r => r.name === STAFF_ROLE);
 }
 
-/* ================= MATCH SYSTEM ================= */
+/* ================= MATCH LOGIC ================= */
 
 function createMatches(players) {
   const shuffled = [...players].sort(() => Math.random() - 0.5);
@@ -54,31 +57,43 @@ function createMatches(players) {
       winner: null
     });
   }
-
   return matches;
 }
 
-function progress() {
+function bracketEmbed() {
   const total = tournament.matches.length;
   const finished = tournament.matches.filter(m => m.winner).length;
-  return `${finished}/${total}`;
-}
 
-function bracketEmbed() {
+  const percent = total === 0 ? 0 : Math.floor((finished / total) * 100);
+  const filled = Math.floor(percent / 10);
+  const bar = "█".repeat(filled) + "░".repeat(10 - filled);
+
   let desc = `🏆 **ShinTours Tournament**\n`;
   desc += `━━━━━━━━━━━━━━━━━━\n`;
   desc += `📍 Server: ${tournament.server}\n`;
   desc += `🎯 Round: ${tournament.round}\n`;
-  desc += `📊 Progress: ${progress()}\n`;
   desc += `━━━━━━━━━━━━━━━━━━\n\n`;
 
   tournament.matches.forEach((m, i) => {
-    const status = m.winner ? "✅" : "⚔️";
-    desc += `${status} **Match ${i + 1}**\n`;
-    desc += m.p2
-      ? `<@${m.p1}> vs <@${m.p2}>\n\n`
-      : `<@${m.p1}> (BYE)\n\n`;
+    desc += `${m.winner ? "✅" : "⚔️"} **Match ${i + 1}**\n`;
+
+    if (!m.p2) {
+      desc += `🏆 **<@${m.p1}>** (BYE)\n\n`;
+      return;
+    }
+
+    if (!m.winner) {
+      desc += `<@${m.p1}> vs <@${m.p2}>\n\n`;
+    } else {
+      const loser = m.p1 === m.winner ? m.p2 : m.p1;
+      desc += `🏆 **<@${m.winner}>**\n`;
+      desc += `❌ ~~<@${loser}>~~\n\n`;
+    }
   });
+
+  desc += `━━━━━━━━━━━━━━━━━━\n`;
+  desc += `📊 Progress\n`;
+  desc += `\`${bar}\` ${percent}%`;
 
   return new EmbedBuilder()
     .setColor("#9b59b6")
@@ -86,17 +101,36 @@ function bracketEmbed() {
     .setImage(BANNER);
 }
 
-/* ================= PANEL ================= */
+/* ================= PANELS ================= */
 
 function panelEmbed() {
   return new EmbedBuilder()
     .setColor("#00ff88")
-    .setTitle("🏆 ShinTours Tournament")
+    .setTitle("🏆 ShinTours Tournament (1v1)")
     .setDescription(`
 ━━━━━━━━━━━━━━━━━━
-🎮 Mode: **1v1**
 👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
 🌍 Server: **${tournament.server}**
+📌 Status: **${tournament.started ? "Started" : "Open"}**
+━━━━━━━━━━━━━━━━━━
+`)
+    .setImage(BANNER);
+}
+
+function teamPanelEmbed() {
+  const teamSize = tournament.mode === "2v2" ? 2 : 3;
+  const teams = tournament.teams.length;
+  const players = teams * teamSize;
+  const remaining = tournament.maxPlayers - teams;
+
+  return new EmbedBuilder()
+    .setColor("#00ff88")
+    .setTitle(`🏆 ShinTours Tournament (${tournament.mode})`)
+    .setDescription(`
+━━━━━━━━━━━━━━━━━━
+👥 Teams: **${teams}/${tournament.maxPlayers}**
+🎮 Players Joined: **${players}**
+📉 Remaining Slots: **${remaining}**
 📌 Status: **${tournament.started ? "Started" : "Open"}**
 ━━━━━━━━━━━━━━━━━━
 `)
@@ -131,7 +165,7 @@ client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-/* ================= MESSAGE COMMANDS ================= */
+/* ================= COMMANDS ================= */
 
 client.on("messageCreate", async (msg) => {
   if (!msg.guild) return;
@@ -141,34 +175,14 @@ client.on("messageCreate", async (msg) => {
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift()?.toLowerCase();
 
-  msg.delete().catch(() => {}); // AUTO DELETE COMMAND
+  msg.delete().catch(() => {});
 
-  if (cmd === "help") {
-    return msg.channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#3498db")
-          .setTitle("📘 ShinTours Help")
-          .setDescription(`
-;1v1 p8 s INW
-;code 1234 @players
-;qualify @player
-;win @player
-          `)
-      ]
-    });
+  if (["1v1","2v2","3v3","code","qualify","win"].includes(cmd)) {
+    if (!isStaff(msg.member)) return;
   }
 
   if (cmd === "1v1") {
-    if (!isStaff(msg.member)) return;
-
-    const pArg = args.find(a => a.startsWith("p"));
-    const sIndex = args.indexOf("s");
-    if (!pArg || sIndex === -1) return;
-
-    tournament = createTournament();
-    tournament.maxPlayers = parseInt(pArg.replace("p", ""));
-    tournament.server = args[sIndex + 1];
+    tournament = createTournament("1v1");
 
     const panel = await msg.channel.send({
       embeds: [panelEmbed()],
@@ -178,27 +192,18 @@ client.on("messageCreate", async (msg) => {
     tournament.panelId = panel.id;
   }
 
-  if (cmd === "code") {
-    if (!isStaff(msg.member)) return;
+  if (cmd === "2v2" || cmd === "3v3") {
+    tournament = createTournament(cmd);
 
-    const code = args[0];
-    const mentions = msg.mentions.users;
-    if (!code || mentions.size === 0) return;
+    const panel = await msg.channel.send({
+      embeds: [teamPanelEmbed()],
+      components: [panelButtons()]
+    });
 
-    const embed = new EmbedBuilder()
-      .setColor("#00ffcc")
-      .setTitle("🎮 Match Code")
-      .setDescription(`Your Match Code:\n\n**${code}**`);
-
-    for (const user of mentions.values()) {
-      try { await user.send({ embeds: [embed] }); } catch {}
-    }
-
-    msg.channel.send("✅ Code sent.");
+    tournament.panelId = panel.id;
   }
 
-  if (cmd === "win" || cmd === "qualify") {
-    if (!isStaff(msg.member)) return;
+  if (cmd === "qualify" || cmd === "win") {
     if (!tournament || !tournament.started) return;
 
     const player = msg.mentions.users.first();
@@ -223,45 +228,67 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.customId === "register") {
     if (!tournament.players.includes(interaction.user.id))
       tournament.players.push(interaction.user.id);
-
-    interaction.reply({ content: "Registered!", ephemeral: true });
   }
 
   if (interaction.customId === "unregister") {
-    tournament.players = tournament.players.filter(
-      id => id !== interaction.user.id
-    );
-    interaction.reply({ content: "Unregistered!", ephemeral: true });
+    tournament.players =
+      tournament.players.filter(id => id !== interaction.user.id);
   }
 
   if (interaction.customId === "start") {
     if (!isStaff(interaction.member)) return;
+
     tournament.started = true;
     tournament.matches = createMatches(tournament.players);
-    interaction.channel.send({ embeds: [bracketEmbed()] });
+
+    const bracketMsg = await interaction.channel.send({
+      embeds: [bracketEmbed()]
+    });
+
+    tournament.bracketId = bracketMsg.id;
   }
 
   const panel = await interaction.channel.messages.fetch(tournament.panelId);
-  panel.edit({ embeds: [panelEmbed()], components: [panelButtons()] });
+
+  await panel.edit({
+    embeds: [
+      tournament.mode === "1v1"
+        ? panelEmbed()
+        : teamPanelEmbed()
+    ],
+    components: [panelButtons()]
+  });
+
+  interaction.reply({ content: "Updated.", ephemeral: true });
 });
 
 /* ================= ROUND SYSTEM ================= */
 
 async function updateBracket(channel) {
+
   const unfinished = tournament.matches.filter(m => !m.winner);
-  if (unfinished.length > 0)
-    return channel.send({ embeds: [bracketEmbed()] });
+
+  if (unfinished.length > 0) {
+    const msg = await channel.messages.fetch(tournament.bracketId);
+    return msg.edit({ embeds: [bracketEmbed()] });
+  }
 
   const winners = tournament.matches.map(m => m.winner);
+
+  const old = await channel.messages.fetch(tournament.bracketId);
+  await old.delete().catch(() => {});
 
   if (winners.length === 1)
     return channel.send(`👑 Champion: <@${winners[0]}>`);
 
   tournament.round++;
   tournament.matches = createMatches(winners);
-  channel.send({ embeds: [bracketEmbed()] });
-}
 
-/* ================= LOGIN ================= */
+  const newMsg = await channel.send({
+    embeds: [bracketEmbed()]
+  });
+
+  tournament.bracketId = newMsg.id;
+}
 
 client.login(process.env.TOKEN);
