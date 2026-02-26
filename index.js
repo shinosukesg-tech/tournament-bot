@@ -49,10 +49,11 @@ function nextPowerOfTwo(n) {
   return Math.pow(2, Math.ceil(Math.log2(n)));
 }
 
-function createTournament(size, server) {
+function createTournament(size, server, map) {
   return {
     maxPlayers: size,
     server: server,
+    map: map,
     players: [],
     matches: [],
     round: 1,
@@ -94,6 +95,7 @@ function registrationEmbed() {
 ━━━━━━━━━━━━━━━━━━
 🎮 Mode: **1v1**
 🌍 Server: **${tournament.server}**
+🗺 Map: **${tournament.map}**
 👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
 📌 Status: **${tournament.started ? "Started" : "Open Registration"}**
 ━━━━━━━━━━━━━━━━━━
@@ -110,12 +112,23 @@ function helpEmbed() {
 🎮 Commands
 ━━━━━━━━━━━━━━━━━━
 
-;1v1 <players> <server>
+;1v1 <players> <server> <map>
+Create tournament
+
 ;code <room> @p1 @p2
+Send private match code
+
 ;win @player
+Mark winner
+
 ;qualify @player
+Same as win
+
 ;del
+Delete tournament
+
 ;help
+Show this menu
 
 ━━━━━━━━━━━━━━━━━━
 Staff required for:
@@ -138,6 +151,7 @@ function bracketEmbed() {
   desc += `━━━━━━━━━━━━━━━━━━\n`;
   desc += `🎯 Round ${tournament.round}\n`;
   desc += `🌍 Server: ${tournament.server}\n`;
+  desc += `🗺 Map: ${tournament.map}\n`;
   desc += `━━━━━━━━━━━━━━━━━━\n\n`;
 
   tournament.matches.forEach((m, i) => {
@@ -166,6 +180,26 @@ function bracketEmbed() {
     .setImage(BANNER);
 }
 
+function buttons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("register")
+      .setLabel("Register")
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(tournament.started),
+    new ButtonBuilder()
+      .setCustomId("unregister")
+      .setLabel("Unregister")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(tournament.started),
+    new ButtonBuilder()
+      .setCustomId("start")
+      .setLabel("Start")
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(tournament.started)
+  );
+}
+
 /* ================= COMMANDS ================= */
 
 client.on("messageCreate", async (msg) => {
@@ -177,25 +211,24 @@ client.on("messageCreate", async (msg) => {
 
   if (msg.deletable) msg.delete().catch(() => {});
 
-  if (cmd === "help") {
+  if (cmd === "help")
     return msg.channel.send({ embeds: [helpEmbed()] });
-  }
 
-  /* FIXED TOURNAMENT EXIST CHECK */
   if (cmd === "1v1") {
     if (!isStaff(msg.member))
       return msg.channel.send("❌ Staff only.");
 
-    if (tournament)
+    if (tournament !== null)
       return msg.channel.send("⚠️ Tournament already exists.");
 
     const size = parseInt(args[0]);
-    const server = args.slice(1).join(" ");
+    const server = args[1];
+    const map = args.slice(2).join(" ");
 
-    if (!size || !server)
-      return msg.channel.send("Usage: ;1v1 <players> <server>");
+    if (!size || !server || !map)
+      return msg.channel.send("Usage: ;1v1 <players> <server> <map>");
 
-    tournament = createTournament(size, server);
+    tournament = createTournament(size, server, map);
 
     const panel = await msg.channel.send({
       embeds: [registrationEmbed()],
@@ -204,8 +237,49 @@ client.on("messageCreate", async (msg) => {
 
     tournament.panelId = panel.id;
   }
-});
 
-/* REST OF YOUR FILE REMAINS SAME */
+  if (cmd === "code") {
+    if (!isStaff(msg.member))
+      return msg.channel.send("❌ Staff only.");
+
+    if (!tournament || !tournament.started)
+      return msg.channel.send("⚠️ Tournament not started.");
+
+    const roomCode = args[0];
+    const mentions = msg.mentions.users;
+
+    if (!roomCode || mentions.size < 2)
+      return msg.channel.send("Usage: ;code <room> @p1 @p2");
+
+    mentions.forEach(async user => {
+      try {
+        await user.send(`
+🌍 Region : ${tournament.server}
+🗺 Map : ${tournament.map}
+🔒 Room Code :
+
+\`\`\`
+${roomCode}
+\`\`\`
+
+⏳ You have 2 minutes to join.
+        `);
+      } catch {}
+    });
+
+    msg.channel.send("📩 Match code sent via DM.");
+  }
+
+  if (cmd === "del") {
+    if (!isStaff(msg.member))
+      return msg.channel.send("❌ Staff only.");
+
+    if (!tournament)
+      return msg.channel.send("⚠️ No active tournament.");
+
+    tournament = null;
+    return msg.channel.send("🗑️ Tournament deleted.");
+  }
+});
 
 client.login(process.env.DISCORD_TOKEN);
