@@ -1,18 +1,3 @@
-/* ===== RENDER FREE JUGAAD (DO NOT REMOVE) ===== */
-const express = require("express");
-const app = express();
-
-const PORT = process.env.PORT || 3000;
-
-app.get("/", (req, res) => {
-  res.send("Bot is alive!");
-});
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("Web server running on port " + PORT);
-});
-/* ===== END RENDER JUGAAD ===== */
-
 require("dotenv").config();
 const {
   Client,
@@ -183,3 +168,4 @@ if (!process.env.TOKEN) {
 } else {
   client.login(process.env.TOKEN);
 }
+
