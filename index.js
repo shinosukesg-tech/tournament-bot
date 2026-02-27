@@ -135,7 +135,6 @@ ${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
 function controlRow() {
   const buttons = [];
 
-  // If final (only 1 match)
   if (tournament.matches.length === 1) {
     buttons.push(
       new ButtonBuilder()
@@ -166,12 +165,37 @@ client.on("messageCreate", async msg => {
 
   await msg.delete().catch(() => {});
 
+  /* ---------- HELP ---------- */
+  if (cmd === "help") {
+    return msg.channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#0099ff")
+          .setTitle("🏆 TOURNAMENT COMMANDS")
+          .setImage(BANNER)
+          .setDescription(`
+\`\`\`
+;1v1 slots server map name
+;start
+;bye
+;qual @user
+;qual bye1
+;code ROOM @user
+;del
+\`\`\`
+`)
+      ]
+    });
+  }
+
+  /* ---------- DELETE ---------- */
   if (cmd === "del") {
     if (!isStaff(msg.member)) return;
     tournament = null;
-    return msg.channel.send("🗑 Tournament deleted.").then(m=>setTimeout(()=>m.delete().catch(()=>{}),3000));
+    return msg.channel.send("🗑 Tournament deleted.");
   }
 
+  /* ---------- CREATE ---------- */
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return;
 
@@ -206,39 +230,10 @@ client.on("messageCreate", async msg => {
 
   if (!tournament) return;
 
-  if (cmd === "bye") {
-    if (!isStaff(msg.member)) return;
-
-    let count = 1;
-    while (tournament.players.length < tournament.maxPlayers) {
-      tournament.players.push(`BYE${count++}`);
-    }
-
-    const panel = await msg.channel.messages.fetch(tournament.panelId);
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("register")
-        .setLabel("Register")
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(true),
-      new ButtonBuilder()
-        .setCustomId("count")
-        .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
-    );
-
-    await panel.edit({
-      embeds: [registrationEmbed()],
-      components: [row]
-    });
-
-    return msg.channel.send("🤖 All slots filled with BYE.").then(m=>setTimeout(()=>m.delete().catch(()=>{}),3000));
-  }
-
+  /* ---------- START ---------- */
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
+    if (tournament.players.length < 2) return;
 
     tournament.started = true;
     tournament.matches = generateMatches(tournament.players);
@@ -249,6 +244,19 @@ client.on("messageCreate", async msg => {
     });
   }
 
+  /* ---------- BYE ---------- */
+  if (cmd === "bye") {
+    if (!isStaff(msg.member)) return;
+
+    let count = 1;
+    while (tournament.players.length < tournament.maxPlayers) {
+      tournament.players.push(`BYE${count++}`);
+    }
+
+    return msg.channel.send("🤖 All slots filled with BYE.");
+  }
+
+  /* ---------- QUALIFY ---------- */
   if (cmd === "qual") {
     if (!isStaff(msg.member)) return;
     if (!tournament.started) return;
@@ -270,16 +278,14 @@ client.on("messageCreate", async msg => {
       m => m.p1 === winnerId || m.p2 === winnerId
     );
 
-    if (!match) return;
+    if (!match) return msg.channel.send("Player not found.");
 
     match.winner = winnerId;
 
-    return msg.channel.send({
-      embeds: [bracketEmbed()],
-      components: [controlRow()]
-    });
+    return msg.channel.send("✅ Winner updated.");
   }
 
+  /* ---------- CODE ---------- */
   if (cmd === "code") {
     if (!isStaff(msg.member)) return;
 
@@ -290,7 +296,8 @@ client.on("messageCreate", async msg => {
     const match = tournament.matches.find(
       m => m.p1 === player.id || m.p2 === player.id
     );
-    if (!match) return;
+
+    if (!match) return msg.channel.send("Match not found.");
 
     const opponentId = match.p1 === player.id ? match.p2 : match.p1;
 
@@ -299,22 +306,23 @@ client.on("messageCreate", async msg => {
       .setTitle("🎮 MATCH ROOM DETAILS")
       .setImage(BANNER)
       .setDescription(`
-🏆 **${tournament.name}**
-📊 Round: ${tournament.round}
+🏆 ${tournament.name}
+📊 Round ${tournament.round}
 
-🔐 Room Code: \`${roomCode}\`
-🌍 Server: ${tournament.server}
-🗺 Map: ${tournament.map}
+🔐 Room Code: ${roomCode}
+🌍 ${tournament.server}
+🗺 ${tournament.map}
 `)
       .setTimestamp();
 
     await player.send({ embeds: [embed] }).catch(()=>{});
+
     if (!opponentId.startsWith("BYE")) {
       const opponent = await client.users.fetch(opponentId);
       await opponent.send({ embeds: [embed] }).catch(()=>{});
     }
 
-    return msg.channel.send("📩 Room code sent.").then(m=>setTimeout(()=>m.delete().catch(()=>{}),3000));
+    return msg.channel.send("📩 Code sent to both players.");
   }
 });
 
@@ -324,15 +332,13 @@ client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
   if (!tournament) return;
 
+  /* REGISTER */
   if (interaction.customId === "register") {
-    if (tournament.started)
-      return interaction.reply({ content: "Tournament already started.", ephemeral: true });
-
     if (tournament.players.includes(interaction.user.id))
-      return interaction.reply({ content: "Already registered.", ephemeral: true });
+      return interaction.reply({ content: "Already registered", ephemeral: true });
 
     if (tournament.players.length >= tournament.maxPlayers)
-      return interaction.reply({ content: "Tournament full.", ephemeral: true });
+      return interaction.reply({ content: "Tournament full", ephemeral: true });
 
     tournament.players.push(interaction.user.id);
 
@@ -342,7 +348,8 @@ client.on("interactionCreate", async interaction => {
       new ButtonBuilder()
         .setCustomId("register")
         .setLabel("Register")
-        .setStyle(ButtonStyle.Success),
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(tournament.players.length >= tournament.maxPlayers),
       new ButtonBuilder()
         .setCustomId("count")
         .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
@@ -358,34 +365,58 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "Registered!", ephemeral: true });
   }
 
+  /* NEXT ROUND */
   if (interaction.customId === "next_round") {
     if (!isStaff(interaction.member)) return;
 
-    const winners = tournament.matches.map(m => m.winner).filter(Boolean);
-    if (winners.length !== tournament.matches.length)
-      return interaction.reply({ content: "All matches not completed.", ephemeral: true });
+    const winners = tournament.matches
+      .filter(m => m.winner)
+      .map(m => m.winner);
+
+    if (winners.length < 2)
+      return interaction.reply({ content: "Round not finished", ephemeral: true });
 
     tournament.round++;
     tournament.matches = generateMatches(winners);
 
-    return interaction.channel.send({
+    return interaction.update({
       embeds: [bracketEmbed()],
       components: [controlRow()]
     });
   }
 
+  /* ANNOUNCE WINNER */
   if (interaction.customId === "announce_winner") {
     if (!isStaff(interaction.member)) return;
 
     const finalMatch = tournament.matches[0];
     if (!finalMatch.winner)
-      return interaction.reply({ content: "Final not completed.", ephemeral: true });
+      return interaction.reply({ content: "Final not completed", ephemeral: true });
 
-    const winnerText = finalMatch.winner.startsWith("BYE")
-      ? `🤖 ${finalMatch.winner}`
-      : `<@${finalMatch.winner}>`;
+    const winnerId = finalMatch.winner;
 
-    return interaction.channel.send(`🏆 TOURNAMENT WINNER: ${winnerText}`);
+    let winnerUser = null;
+    if (!winnerId.startsWith("BYE"))
+      winnerUser = await client.users.fetch(winnerId);
+
+    const winnerEmbed = new EmbedBuilder()
+      .setColor("#FFD700")
+      .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
+      .setImage(BANNER)
+      .setDescription(
+        winnerUser
+          ? `👑 Congratulations <@${winnerId}>`
+          : `🤖 ${winnerId} wins!`
+      )
+      .setThumbnail(winnerUser ? winnerUser.displayAvatarURL({ size: 512 }) : null)
+      .setTimestamp();
+
+    tournament = null;
+
+    return interaction.update({
+      embeds: [winnerEmbed],
+      components: []
+    });
   }
 });
 
