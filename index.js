@@ -48,6 +48,7 @@ function shuffle(arr) {
 }
 
 function nextPowerOfTwo(n) {
+  if (n <= 1) return 1;
   return Math.pow(2, Math.ceil(Math.log2(n)));
 }
 
@@ -70,6 +71,8 @@ function createTournament(size, server, map, name, channelId) {
 }
 
 function generateMatches(players) {
+  if (players.length === 0) return [];
+
   const shuffled = shuffle([...players]);
   const size = nextPowerOfTwo(shuffled.length);
 
@@ -109,18 +112,22 @@ function registrationEmbed() {
 function bracketEmbed() {
   let desc = `🏆 ROUND ${tournament.round}\n\n`;
 
-  tournament.matches.forEach((m, i) => {
-    const p1 = m.p1.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
-    const p2 = m.p2.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
+  if (tournament.matches.length === 0) {
+    desc += "No matches available.\n";
+  } else {
+    tournament.matches.forEach((m, i) => {
+      const p1 = m.p1.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
+      const p2 = m.p2.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
 
-    const winner = m.winner
-      ? m.winner.startsWith("BYE")
-        ? `🏅 Winner: 🤖 ${m.winner}`
-        : `🏅 Winner: <@${m.winner}>`
-      : "";
+      const winner = m.winner
+        ? m.winner.startsWith("BYE")
+          ? `🏅 Winner: 🤖 ${m.winner}`
+          : `🏅 Winner: <@${m.winner}>`
+        : "";
 
-    desc += `Match ${i + 1}\n${p1} ⚔ ${p2}\n${winner}\n\n`;
-  });
+      desc += `Match ${i + 1}\n${p1} ⚔ ${p2}\n${winner}\n\n`;
+    });
+  }
 
   return new EmbedBuilder()
     .setColor("#00ff88")
@@ -141,8 +148,6 @@ client.on("messageCreate", async msg => {
 
   msg.delete().catch(() => {});
 
-  /* ========= HELP ========= */
-
   if (cmd === "help") {
     const embed = new EmbedBuilder()
       .setColor("#0099ff")
@@ -157,22 +162,17 @@ client.on("messageCreate", async msg => {
 ;code ROOMCODE @user
 ;del
 \`\`\`
-⚡ Professional Esports System
 `)
       .setTimestamp();
 
     return msg.channel.send({ embeds: [embed] });
   }
 
-  /* ========= DELETE ========= */
-
   if (cmd === "del") {
     if (!isStaff(msg.member)) return;
     tournament = null;
     return msg.channel.send("🗑 Tournament deleted.");
   }
-
-  /* ========= CREATE ========= */
 
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return;
@@ -208,16 +208,15 @@ client.on("messageCreate", async msg => {
 
   if (!tournament) return;
 
-  /* ========= START (FIXED) ========= */
+  /* ===== START (MINIMUM REMOVED) ===== */
 
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
     if (tournament.started) return msg.channel.send("Already started.");
-    if (tournament.players.length < 2)
-      return msg.channel.send("Not enough players.");
 
     tournament.started = true;
     tournament.locked = true;
+
     tournament.matches = generateMatches(tournament.players);
 
     try {
@@ -232,8 +231,6 @@ client.on("messageCreate", async msg => {
 
     return;
   }
-
-  /* ========= QUAL & WIN ========= */
 
   if (cmd === "qual" || cmd === "win") {
     if (!isStaff(msg.member)) return;
@@ -284,8 +281,6 @@ client.on("messageCreate", async msg => {
     const panel = await msg.channel.messages.fetch(tournament.panelId);
     await panel.edit({ embeds: [bracketEmbed()] });
   }
-
-  /* ========= CODE ========= */
 
   if (cmd === "code") {
     if (!isStaff(msg.member)) return;
