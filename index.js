@@ -100,6 +100,7 @@ function registrationEmbed() {
 🎮 Mode: **1v1**
 🌍 Server: **${tournament.server}**
 🗺 Map: **${tournament.map}**
+👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
 🔓 Status: **${tournament.locked ? "LOCKED" : "OPEN"}**
 `)
     .setTimestamp();
@@ -140,24 +141,38 @@ client.on("messageCreate", async msg => {
 
   msg.delete().catch(() => {});
 
-  if (cmd === "help") {
-    return msg.channel.send(`
-🏆 **TOURNAMENT COMMANDS**
+  /* ========= HELP ========= */
 
-;1v1 (players) (server) (map) (name)
+  if (cmd === "help") {
+    const embed = new EmbedBuilder()
+      .setColor("#0099ff")
+      .setTitle("🏆 TOURNAMENT COMMANDS")
+      .setImage(BANNER)
+      .setDescription(`
+\`\`\`
+;1v1 (slots) (server) (map) (name)
 ;start
 ;qual r(matchNumber) @user/BYE1
-;win @user/BYE1
+;win @user
 ;code ROOMCODE @user
 ;del
-`);
+\`\`\`
+⚡ Professional Esports System
+`)
+      .setTimestamp();
+
+    return msg.channel.send({ embeds: [embed] });
   }
+
+  /* ========= DELETE ========= */
 
   if (cmd === "del") {
     if (!isStaff(msg.member)) return;
     tournament = null;
     return msg.channel.send("🗑 Tournament deleted.");
   }
+
+  /* ========= CREATE ========= */
 
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return;
@@ -193,16 +208,32 @@ client.on("messageCreate", async msg => {
 
   if (!tournament) return;
 
+  /* ========= START (FIXED) ========= */
+
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
+    if (tournament.started) return msg.channel.send("Already started.");
+    if (tournament.players.length < 2)
+      return msg.channel.send("Not enough players.");
 
     tournament.started = true;
     tournament.locked = true;
     tournament.matches = generateMatches(tournament.players);
 
-    const panel = await msg.channel.messages.fetch(tournament.panelId);
-    await panel.edit({ embeds: [bracketEmbed()], components: [] });
+    try {
+      const panel = await msg.channel.messages.fetch(tournament.panelId);
+      await panel.edit({
+        embeds: [bracketEmbed()],
+        components: []
+      });
+    } catch (err) {
+      console.log("Panel edit failed:", err);
+    }
+
+    return;
   }
+
+  /* ========= QUAL & WIN ========= */
 
   if (cmd === "qual" || cmd === "win") {
     if (!isStaff(msg.member)) return;
@@ -212,18 +243,15 @@ client.on("messageCreate", async msg => {
     let match;
 
     if (cmd === "qual") {
-      const roundRef = args[0];
-      const target = args[1];
-      if (!roundRef || !target) return;
+      const matchNumber = parseInt(args[0]?.replace("r", ""));
+      if (!matchNumber) return;
 
-      const matchNumber = parseInt(roundRef.replace("r", ""));
       match = tournament.matches[matchNumber - 1];
       if (!match) return;
 
-      winner = target.toUpperCase().startsWith("BYE")
-        ? target.toUpperCase()
+      winner = args[1]?.toUpperCase().startsWith("BYE")
+        ? args[1].toUpperCase()
         : msg.mentions.users.first()?.id;
-
     } else {
       const user = msg.mentions.users.first();
       if (!user) return;
@@ -257,6 +285,8 @@ client.on("messageCreate", async msg => {
     await panel.edit({ embeds: [bracketEmbed()] });
   }
 
+  /* ========= CODE ========= */
+
   if (cmd === "code") {
     if (!isStaff(msg.member)) return;
 
@@ -278,7 +308,6 @@ client.on("messageCreate", async msg => {
         .setColor("#0099ff")
         .setTitle("🎮 MATCH ROOM")
         .setDescription(`
-🏆 Tournament Match
 🔑 Room Code:
 \`\`\`${roomCode}\`\`\`
 🌍 Server: **${tournament.server}**
@@ -334,7 +363,7 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-/* ================= SLASH COMMAND ================= */
+/* ================= READY ================= */
 
 client.on("ready", async () => {
   const data = new SlashCommandBuilder()
