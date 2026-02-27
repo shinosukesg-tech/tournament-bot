@@ -14,7 +14,8 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionsBitField
+  PermissionsBitField,
+  SlashCommandBuilder
 } = require("discord.js");
 
 const PREFIX = ";";
@@ -52,8 +53,9 @@ function nextPowerOfTwo(n) {
 
 /* ================= CREATE ================= */
 
-function createTournament(size, server, map, channelId) {
+function createTournament(size, server, map, name, channelId) {
   return {
+    name,
     maxPlayers: size,
     server,
     map,
@@ -67,7 +69,6 @@ function createTournament(size, server, map, channelId) {
   };
 }
 
-/* FIXED BYE GENERATION (NO MORE UNDEFINED) */
 function generateMatches(players) {
   const shuffled = shuffle([...players]);
   const size = nextPowerOfTwo(shuffled.length);
@@ -78,7 +79,6 @@ function generateMatches(players) {
   }
 
   const matches = [];
-
   for (let i = 0; i < shuffled.length; i += 2) {
     matches.push({
       p1: shuffled[i],
@@ -86,7 +86,6 @@ function generateMatches(players) {
       winner: null
     });
   }
-
   return matches;
 }
 
@@ -95,7 +94,7 @@ function generateMatches(players) {
 function registrationEmbed() {
   return new EmbedBuilder()
     .setColor("#ff003c")
-    .setTitle("🏆 SHINTOURS ESPORTS TOURNAMENT")
+    .setTitle(`🏆 ${tournament.name}`)
     .setImage(BANNER)
     .setDescription(`
 🎮 Mode: **1v1**
@@ -110,15 +109,14 @@ function bracketEmbed() {
   let desc = `🏆 ROUND ${tournament.round}\n\n`;
 
   tournament.matches.forEach((m, i) => {
-    const p1 = m.p1?.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
-    const p2 = m.p2?.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
+    const p1 = m.p1.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
+    const p2 = m.p2.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
 
-    const winner =
-      m.winner
-        ? m.winner.startsWith("BYE")
-          ? `🏅 Winner: 🤖 ${m.winner}`
-          : `🏅 Winner: <@${m.winner}>`
-        : "";
+    const winner = m.winner
+      ? m.winner.startsWith("BYE")
+        ? `🏅 Winner: 🤖 ${m.winner}`
+        : `🏅 Winner: <@${m.winner}>`
+      : "";
 
     desc += `Match ${i + 1}\n${p1} ⚔ ${p2}\n${winner}\n\n`;
   });
@@ -142,16 +140,35 @@ client.on("messageCreate", async msg => {
 
   msg.delete().catch(() => {});
 
-  /* CREATE */
+  if (cmd === "help") {
+    return msg.channel.send(`
+🏆 **TOURNAMENT COMMANDS**
+
+;1v1 (players) (server) (map) (name)
+;start
+;qual r(matchNumber) @user/BYE1
+;win @user/BYE1
+;code ROOMCODE @user
+;del
+`);
+  }
+
+  if (cmd === "del") {
+    if (!isStaff(msg.member)) return;
+    tournament = null;
+    return msg.channel.send("🗑 Tournament deleted.");
+  }
+
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return;
 
     const size = parseInt(args[0]);
     const server = args[1];
-    const map = args.slice(2).join(" ");
-    if (!size || !server || !map) return;
+    const map = args[2];
+    const name = args.slice(3).join(" ");
+    if (!size || !server || !map || !name) return;
 
-    tournament = createTournament(size, server, map, msg.channel.id);
+    tournament = createTournament(size, server, map, name, msg.channel.id);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -160,7 +177,7 @@ client.on("messageCreate", async msg => {
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
         .setCustomId("count")
-        .setLabel(`0/${size}`)
+        .setLabel(`👤 0/${size}`)
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(true)
     );
@@ -176,7 +193,6 @@ client.on("messageCreate", async msg => {
 
   if (!tournament) return;
 
-  /* START */
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
 
@@ -185,54 +201,42 @@ client.on("messageCreate", async msg => {
     tournament.matches = generateMatches(tournament.players);
 
     const panel = await msg.channel.messages.fetch(tournament.panelId);
-    await panel.edit({
-      embeds: [bracketEmbed()],
-      components: []
-    });
-    return;
+    await panel.edit({ embeds: [bracketEmbed()], components: [] });
   }
 
-  /* QUAL FIXED */
-  if (cmd === "qual") {
+  if (cmd === "qual" || cmd === "win") {
     if (!isStaff(msg.member)) return;
-    if (tournament.started) return;
+    if (!tournament.started) return;
 
-    const input = args[0];
-    if (!input) return;
+    let winner;
+    let match;
 
-    const upper = input.toUpperCase();
+    if (cmd === "qual") {
+      const roundRef = args[0];
+      const target = args[1];
+      if (!roundRef || !target) return;
 
-    if (upper.startsWith("BYE")) {
-      if (!tournament.players.includes(upper))
-        tournament.players.push(upper);
+      const matchNumber = parseInt(roundRef.replace("r", ""));
+      match = tournament.matches[matchNumber - 1];
+      if (!match) return;
+
+      winner = target.toUpperCase().startsWith("BYE")
+        ? target.toUpperCase()
+        : msg.mentions.users.first()?.id;
+
     } else {
       const user = msg.mentions.users.first();
       if (!user) return;
-      if (!tournament.players.includes(user.id))
-        tournament.players.push(user.id);
+
+      match = tournament.matches.find(
+        m => !m.winner && (m.p1 === user.id || m.p2 === user.id)
+      );
+      if (!match) return;
+
+      winner = user.id;
     }
 
-    return;
-  }
-
-  /* WIN FIXED */
-  if (cmd === "win") {
-    if (!isStaff(msg.member)) return;
-
-    const input = args[0];
-    if (!input) return;
-
-    const winner =
-      input.toUpperCase().startsWith("BYE")
-        ? input.toUpperCase()
-        : msg.mentions.users.first()?.id;
-
     if (!winner) return;
-
-    const match = tournament.matches.find(
-      m => !m.winner && (m.p1 === winner || m.p2 === winner)
-    );
-    if (!match) return;
 
     match.winner = winner;
 
@@ -240,6 +244,7 @@ client.on("messageCreate", async msg => {
       const winners = tournament.matches.map(m => m.winner);
 
       if (winners.length === 1) {
+        msg.channel.send(`🏆 TOURNAMENT WINNER: ${winners[0].startsWith("BYE") ? winners[0] : `<@${winners[0]}>`}`);
         tournament = null;
         return;
       }
@@ -250,10 +255,8 @@ client.on("messageCreate", async msg => {
 
     const panel = await msg.channel.messages.fetch(tournament.panelId);
     await panel.edit({ embeds: [bracketEmbed()] });
-    return;
   }
 
-  /* CODE OLD STYLE RESTORED */
   if (cmd === "code") {
     if (!isStaff(msg.member)) return;
 
@@ -273,14 +276,13 @@ client.on("messageCreate", async msg => {
 
       const embed = new EmbedBuilder()
         .setColor("#0099ff")
-        .setTitle("🎮 SHINTOURS MATCH ROOM")
+        .setTitle("🎮 MATCH ROOM")
         .setDescription(`
-━━━━━━━━━━━━━━━━━━
 🏆 Tournament Match
-🔑 Room Code: **${roomCode}**
+🔑 Room Code:
+\`\`\`${roomCode}\`\`\`
 🌍 Server: **${tournament.server}**
 🗺 Map: **${tournament.map}**
-━━━━━━━━━━━━━━━━━━
 Good Luck! 🔥
 `)
         .setTimestamp();
@@ -290,19 +292,22 @@ Good Luck! 🔥
   }
 });
 
+/* ================= REGISTER BUTTON ================= */
+
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
   if (!tournament) return;
 
   if (interaction.customId === "register") {
     if (tournament.started)
-      return interaction.reply({ content: "Started.", ephemeral: true });
+      return interaction.reply({ content: "Tournament started.", ephemeral: true });
 
     if (tournament.players.includes(interaction.user.id)) {
-      tournament.players = tournament.players.filter(
-        id => id !== interaction.user.id
-      );
+      tournament.players = tournament.players.filter(id => id !== interaction.user.id);
     } else {
+      if (tournament.players.length >= tournament.maxPlayers)
+        return interaction.reply({ content: "Slots full.", ephemeral: true });
+
       tournament.players.push(interaction.user.id);
     }
 
@@ -315,7 +320,7 @@ client.on("interactionCreate", async interaction => {
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
         .setCustomId("count")
-        .setLabel(`${tournament.players.length}/${tournament.maxPlayers}`)
+        .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(true)
     );
@@ -325,8 +330,19 @@ client.on("interactionCreate", async interaction => {
       components: [row]
     });
 
-    await interaction.deferUpdate();
+    await interaction.reply({ content: "Updated.", ephemeral: true });
   }
+});
+
+/* ================= SLASH COMMAND ================= */
+
+client.on("ready", async () => {
+  const data = new SlashCommandBuilder()
+    .setName("tournament1")
+    .setDescription("Create tournament panel");
+
+  await client.application.commands.create(data);
+  console.log("Bot Ready");
 });
 
 client.login(process.env.DISCORD_TOKEN);
