@@ -26,10 +26,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: ["CHANNEL"]
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 let tournament = null;
@@ -47,7 +45,6 @@ function shuffle(arr) {
 }
 
 function nextPowerOfTwo(n) {
-  if (n <= 1) return 1;
   return Math.pow(2, Math.ceil(Math.log2(n)));
 }
 
@@ -61,22 +58,15 @@ function createTournament(size, server, map, name, channelId) {
     matches: [],
     round: 1,
     started: false,
-    locked: false,
     channelId,
     panelId: null
   };
 }
 
 function generateMatches(players) {
-  const shuffled = shuffle([...players]);
-  const size = nextPowerOfTwo(shuffled.length);
-
-  let byeCount = 1;
-  while (shuffled.length < size) {
-    shuffled.push(`BYE${byeCount++}`);
-  }
-
+  const shuffled = shuffle(players);
   const matches = [];
+
   for (let i = 0; i < shuffled.length; i += 2) {
     matches.push({
       p1: shuffled[i],
@@ -100,23 +90,17 @@ function registrationEmbed() {
 🌍 Server: **${tournament.server}**
 🗺 Map: **${tournament.map}**
 👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
-🔓 Status: **${tournament.locked ? "LOCKED" : "OPEN"}**
+🔓 Status: **OPEN**
 `)
     .setTimestamp();
 }
 
 function bracketEmbed() {
-  if (!tournament.matches.length) {
-    return new EmbedBuilder()
-      .setColor("#ffaa00")
-      .setTitle("No matches generated.");
-  }
-
   let desc = `🏆 ROUND ${tournament.round}\n\n`;
 
   tournament.matches.forEach((m, i) => {
-    let p1 = m.p1.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
-    let p2 = m.p2.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
+    let p1 = `<@${m.p1}>`;
+    let p2 = `<@${m.p2}>`;
 
     if (m.winner) {
       if (m.winner === m.p1) {
@@ -128,18 +112,31 @@ function bracketEmbed() {
       }
     }
 
-    const status = m.winner ? "✔ MATCH COMPLETE" : "⏳ Pending";
-
-    desc += `Match ${i + 1} — ${status}
+    desc += `Match ${i + 1}
 ${p1} ⚔ ${p2}
-\n`;
+${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
+
+`;
   });
 
   return new EmbedBuilder()
     .setColor("#00ff88")
-    .setTitle("📊 LIVE BRACKET")
+    .setTitle("📊 TOURNAMENT BRACKET")
     .setImage(BANNER)
     .setDescription(desc)
+    .setTimestamp();
+}
+
+function championEmbed(winnerId) {
+  return new EmbedBuilder()
+    .setColor("#ffd700")
+    .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
+    .setImage(BANNER)
+    .setDescription(`
+👑 Congratulations <@${winnerId}>!
+
+You are the official champion of **${tournament.name}**
+`)
     .setTimestamp();
 }
 
@@ -151,34 +148,7 @@ client.on("messageCreate", async msg => {
 
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
-
   msg.delete().catch(() => {});
-
-  if (cmd === "help") {
-    const embed = new EmbedBuilder()
-      .setColor("#0099ff")
-      .setTitle("🏆 TOURNAMENT COMMANDS")
-      .setImage(BANNER)
-      .setDescription(`
-\`\`\`
-;1v1 (slots) (server) (map) (name)
-;qual r(match) @user/BYE
-;win @user
-;code ROOMCODE @user
-;del
-\`\`\`
-Use START button to begin.
-`)
-      .setTimestamp();
-
-    return msg.channel.send({ embeds: [embed] });
-  }
-
-  if (cmd === "del") {
-    if (!isStaff(msg.member)) return;
-    tournament = null;
-    return msg.channel.send("🗑 Tournament deleted.");
-  }
 
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return;
@@ -187,6 +157,7 @@ Use START button to begin.
     const server = args[1];
     const map = args[2];
     const name = args.slice(3).join(" ");
+
     if (!size || !server || !map || !name) return;
 
     tournament = createTournament(size, server, map, name, msg.channel.id);
@@ -198,13 +169,7 @@ Use START button to begin.
         .setStyle(ButtonStyle.Success),
 
       new ButtonBuilder()
-        .setCustomId("count")
-        .setLabel(`👤 0/${size}`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true),
-
-      new ButtonBuilder()
-        .setCustomId("start_tournament")
+        .setCustomId("start")
         .setLabel("START")
         .setStyle(ButtonStyle.Danger)
     );
@@ -215,100 +180,56 @@ Use START button to begin.
     });
 
     tournament.panelId = panel.id;
-    return;
   }
 
-  if (!tournament || !tournament.started) return;
-
-  if (cmd === "qual" || cmd === "win") {
+  if (cmd === "qual") {
     if (!isStaff(msg.member)) return;
+    if (!tournament || !tournament.started) return;
 
-    let winnerId = null;
-    let match = null;
-
-    if (cmd === "qual") {
-      const matchNumber = parseInt(args[0]?.replace("r", ""));
-      if (!matchNumber) return;
-
-      match = tournament.matches[matchNumber - 1];
-      if (!match) return;
-
-      if (args[1]?.toUpperCase().startsWith("BYE")) {
-        winnerId = args[1].toUpperCase();
-      } else {
-        winnerId = msg.mentions.users.first()?.id;
-      }
-    }
-
-    if (cmd === "win") {
-      const user = msg.mentions.users.first();
-      if (!user) return;
-
-      match = tournament.matches.find(
-        m => !m.winner && (m.p1 === user.id || m.p2 === user.id)
-      );
-      if (!match) return;
-
-      winnerId = user.id;
-    }
-
-    if (!winnerId || !match) return;
-
-    match.winner = winnerId;
-
-    if (tournament.matches.every(m => m.winner)) {
-      const winners = tournament.matches.map(m => m.winner);
-
-      if (winners.length === 1) {
-        msg.channel.send(
-          `🏆 TOURNAMENT WINNER: ${
-            winners[0].startsWith("BYE")
-              ? winners[0]
-              : `<@${winners[0]}>`
-          }`
-        );
-        tournament = null;
-        return;
-      }
-
-      tournament.round++;
-      tournament.matches = generateMatches(winners);
-    }
-
-    const panel = await msg.channel.messages.fetch(tournament.panelId);
-    await panel.edit({ embeds: [bracketEmbed()] });
-  }
-
-  if (cmd === "code") {
-    if (!isStaff(msg.member)) return;
-
-    const roomCode = args[0];
     const user = msg.mentions.users.first();
-    if (!roomCode || !user) return;
+    if (!user) return;
 
-    const match = tournament.matches.find(
-      m => !m.winner && (m.p1 === user.id || m.p2 === user.id)
-    );
-    if (!match) return;
+    for (const match of tournament.matches) {
+      if (!match.winner &&
+        (match.p1 === user.id || match.p2 === user.id)) {
 
-    for (const id of [match.p1, match.p2]) {
-      if (id.startsWith("BYE")) continue;
+        match.winner = user.id;
 
-      const member = await msg.guild.members.fetch(id);
+        const panel = await msg.channel.messages.fetch(tournament.panelId);
+        await panel.edit({ embeds: [bracketEmbed()] });
 
-      const embed = new EmbedBuilder()
-        .setColor("#0099ff")
-        .setTitle("🎮 MATCH ROOM")
-        .setDescription(`
-🔑 Room Code:
-\`\`\`${roomCode}\`\`\`
-🌍 Server: **${tournament.server}**
-🗺 Map: **${tournament.map}**
-Good Luck 🔥
-`)
-        .setTimestamp();
+        const allDone = tournament.matches.every(m => m.winner);
 
-      await member.send({ embeds: [embed] }).catch(() => {});
+        if (allDone) {
+          if (tournament.matches.length === 1) {
+            const row = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("announce")
+                .setLabel("🏆 ANNOUNCE WINNER")
+                .setStyle(ButtonStyle.Success)
+            );
+
+            await panel.edit({
+              embeds: [bracketEmbed()],
+              components: [row]
+            });
+          } else {
+            const row = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("next")
+                .setLabel("NEXT ROUND")
+                .setStyle(ButtonStyle.Primary)
+            );
+
+            await panel.edit({
+              embeds: [bracketEmbed()],
+              components: [row]
+            });
+          }
+        }
+
+        break;
+      }
     }
   }
 });
@@ -320,57 +241,23 @@ client.on("interactionCreate", async interaction => {
   if (!tournament) return;
 
   if (interaction.customId === "register") {
-    if (tournament.started)
-      return interaction.reply({ content: "Tournament started.", ephemeral: true });
+    if (tournament.players.includes(interaction.user.id)) return;
 
-    if (tournament.players.includes(interaction.user.id)) {
-      tournament.players = tournament.players.filter(id => id !== interaction.user.id);
-    } else {
-      if (tournament.players.length >= tournament.maxPlayers)
-        return interaction.reply({ content: "Slots full.", ephemeral: true });
-
-      tournament.players.push(interaction.user.id);
-    }
+    tournament.players.push(interaction.user.id);
 
     const panel = await interaction.channel.messages.fetch(tournament.panelId);
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("register")
-        .setLabel("Register")
-        .setStyle(ButtonStyle.Success),
-
-      new ButtonBuilder()
-        .setCustomId("count")
-        .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true),
-
-      new ButtonBuilder()
-        .setCustomId("start_tournament")
-        .setLabel("START")
-        .setStyle(ButtonStyle.Danger)
-    );
-
     await panel.edit({
-      embeds: [registrationEmbed()],
-      components: [row]
+      embeds: [registrationEmbed()]
     });
 
-    await interaction.reply({ content: "Updated.", ephemeral: true });
+    return interaction.reply({ content: "Registered!", ephemeral: true });
   }
 
-  if (interaction.customId === "start_tournament") {
-    if (!isStaff(interaction.member))
-      return interaction.reply({ content: "No permission.", ephemeral: true });
-
-    if (tournament.started)
-      return interaction.reply({ content: "Already started.", ephemeral: true });
-
-    await interaction.deferReply({ ephemeral: true });
+  if (interaction.customId === "start") {
+    if (!isStaff(interaction.member)) return;
 
     tournament.started = true;
-    tournament.locked = true;
     tournament.matches = generateMatches(tournament.players);
 
     const panel = await interaction.channel.messages.fetch(tournament.panelId);
@@ -380,7 +267,38 @@ client.on("interactionCreate", async interaction => {
       components: []
     });
 
-    await interaction.editReply("Tournament Started ✅");
+    return interaction.reply({ content: "Tournament Started!", ephemeral: true });
+  }
+
+  if (interaction.customId === "next") {
+    if (!isStaff(interaction.member)) return;
+
+    const winners = tournament.matches.map(m => m.winner);
+    tournament.round++;
+    tournament.matches = generateMatches(winners);
+
+    const panel = await interaction.channel.messages.fetch(tournament.panelId);
+
+    await panel.edit({
+      embeds: [bracketEmbed()],
+      components: []
+    });
+
+    return interaction.reply({ content: "Next Round Generated!", ephemeral: true });
+  }
+
+  if (interaction.customId === "announce") {
+    if (!isStaff(interaction.member)) return;
+
+    const winner = tournament.matches[0].winner;
+
+    await interaction.channel.send({
+      embeds: [championEmbed(winner)]
+    });
+
+    tournament = null;
+
+    return interaction.reply({ content: "Champion Announced!", ephemeral: true });
   }
 });
 
