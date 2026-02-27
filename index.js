@@ -71,8 +71,6 @@ function createTournament(size, server, map, name, channelId) {
 }
 
 function generateMatches(players) {
-  if (players.length === 0) return [];
-
   const shuffled = shuffle([...players]);
   const size = nextPowerOfTwo(shuffled.length);
 
@@ -89,6 +87,7 @@ function generateMatches(players) {
       winner: null
     });
   }
+
   return matches;
 }
 
@@ -112,22 +111,18 @@ function registrationEmbed() {
 function bracketEmbed() {
   let desc = `🏆 ROUND ${tournament.round}\n\n`;
 
-  if (tournament.matches.length === 0) {
-    desc += "No matches available.\n";
-  } else {
-    tournament.matches.forEach((m, i) => {
-      const p1 = m.p1.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
-      const p2 = m.p2.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
+  tournament.matches.forEach((m, i) => {
+    const p1 = m.p1.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
+    const p2 = m.p2.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
 
-      const winner = m.winner
-        ? m.winner.startsWith("BYE")
-          ? `🏅 Winner: 🤖 ${m.winner}`
-          : `🏅 Winner: <@${m.winner}>`
-        : "";
+    const winnerLine = m.winner
+      ? m.winner.startsWith("BYE")
+        ? `🏅 Winner: 🤖 ${m.winner}`
+        : `🏅 Winner: <@${m.winner}>`
+      : "⏳ Pending";
 
-      desc += `Match ${i + 1}\n${p1} ⚔ ${p2}\n${winner}\n\n`;
-    });
-  }
+    desc += `Match ${i + 1}\n${p1} ⚔ ${p2}\n${winnerLine}\n\n`;
+  });
 
   return new EmbedBuilder()
     .setColor("#00ff88")
@@ -157,7 +152,7 @@ client.on("messageCreate", async msg => {
 \`\`\`
 ;1v1 (slots) (server) (map) (name)
 ;start
-;qual r(matchNumber) @user/BYE1
+;qual r(match) @user/BYE1
 ;win @user
 ;code ROOMCODE @user
 ;del
@@ -208,27 +203,19 @@ client.on("messageCreate", async msg => {
 
   if (!tournament) return;
 
-  /* ===== START (MINIMUM REMOVED) ===== */
-
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
-    if (tournament.started) return msg.channel.send("Already started.");
+    if (tournament.started) return;
 
     tournament.started = true;
     tournament.locked = true;
-
     tournament.matches = generateMatches(tournament.players);
 
-    try {
-      const panel = await msg.channel.messages.fetch(tournament.panelId);
-      await panel.edit({
-        embeds: [bracketEmbed()],
-        components: []
-      });
-    } catch (err) {
-      console.log("Panel edit failed:", err);
-    }
-
+    const panel = await msg.channel.messages.fetch(tournament.panelId);
+    await panel.edit({
+      embeds: [bracketEmbed()],
+      components: []
+    });
     return;
   }
 
@@ -307,7 +294,7 @@ client.on("messageCreate", async msg => {
 \`\`\`${roomCode}\`\`\`
 🌍 Server: **${tournament.server}**
 🗺 Map: **${tournament.map}**
-Good Luck! 🔥
+Good Luck 🔥
 `)
         .setTimestamp();
 
@@ -358,15 +345,6 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-/* ================= READY ================= */
-
-client.on("ready", async () => {
-  const data = new SlashCommandBuilder()
-    .setName("tournament1")
-    .setDescription("Create tournament panel");
-
-  await client.application.commands.create(data);
-  console.log("Bot Ready");
-});
+/* ================= LOGIN ================= */
 
 client.login(process.env.DISCORD_TOKEN);
