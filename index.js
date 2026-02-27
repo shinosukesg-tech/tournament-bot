@@ -14,8 +14,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionsBitField,
-  SlashCommandBuilder
+  PermissionsBitField
 } = require("discord.js");
 
 const PREFIX = ";";
@@ -151,12 +150,12 @@ client.on("messageCreate", async msg => {
       .setDescription(`
 \`\`\`
 ;1v1 (slots) (server) (map) (name)
-;start
 ;qual r(match) @user/BYE1
 ;win @user
 ;code ROOMCODE @user
 ;del
 \`\`\`
+Start using the START button.
 `)
       .setTimestamp();
 
@@ -185,11 +184,17 @@ client.on("messageCreate", async msg => {
         .setCustomId("register")
         .setLabel("Register")
         .setStyle(ButtonStyle.Success),
+
       new ButtonBuilder()
         .setCustomId("count")
         .setLabel(`👤 0/${size}`)
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
+        .setDisabled(true),
+
+      new ButtonBuilder()
+        .setCustomId("start_tournament")
+        .setLabel("START")
+        .setStyle(ButtonStyle.Danger)
     );
 
     const panel = await msg.channel.send({
@@ -202,22 +207,6 @@ client.on("messageCreate", async msg => {
   }
 
   if (!tournament) return;
-
-  if (cmd === "start") {
-    if (!isStaff(msg.member)) return;
-    if (tournament.started) return;
-
-    tournament.started = true;
-    tournament.locked = true;
-    tournament.matches = generateMatches(tournament.players);
-
-    const panel = await msg.channel.messages.fetch(tournament.panelId);
-    await panel.edit({
-      embeds: [bracketEmbed()],
-      components: []
-    });
-    return;
-  }
 
   if (cmd === "qual" || cmd === "win") {
     if (!isStaff(msg.member)) return;
@@ -303,7 +292,7 @@ Good Luck 🔥
   }
 });
 
-/* ================= REGISTER BUTTON ================= */
+/* ================= BUTTONS ================= */
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
@@ -329,11 +318,17 @@ client.on("interactionCreate", async interaction => {
         .setCustomId("register")
         .setLabel("Register")
         .setStyle(ButtonStyle.Success),
+
       new ButtonBuilder()
         .setCustomId("count")
         .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
+        .setDisabled(true),
+
+      new ButtonBuilder()
+        .setCustomId("start_tournament")
+        .setLabel("START")
+        .setStyle(ButtonStyle.Danger)
     );
 
     await panel.edit({
@@ -342,6 +337,27 @@ client.on("interactionCreate", async interaction => {
     });
 
     await interaction.reply({ content: "Updated.", ephemeral: true });
+  }
+
+  if (interaction.customId === "start_tournament") {
+    if (!isStaff(interaction.member))
+      return interaction.reply({ content: "No permission.", ephemeral: true });
+
+    if (tournament.started)
+      return interaction.reply({ content: "Already started.", ephemeral: true });
+
+    tournament.started = true;
+    tournament.locked = true;
+    tournament.matches = generateMatches(tournament.players);
+
+    const panel = await interaction.channel.messages.fetch(tournament.panelId);
+
+    await panel.edit({
+      embeds: [bracketEmbed()],
+      components: []
+    });
+
+    return interaction.reply({ content: "Tournament Started ✅", ephemeral: true });
   }
 });
 
