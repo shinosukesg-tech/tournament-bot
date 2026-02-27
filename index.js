@@ -67,16 +67,18 @@ function createTournament(size, server, map, channelId) {
   };
 }
 
+/* FIXED BYE GENERATION (NO MORE UNDEFINED) */
 function generateMatches(players) {
-  const shuffled = shuffle(players);
-  const size = nextPowerOfTwo(players.length || 1);
+  const shuffled = shuffle([...players]);
+  const size = nextPowerOfTwo(shuffled.length);
 
-  let bye = 1;
+  let byeCount = 1;
   while (shuffled.length < size) {
-    shuffled.push(`BYE${bye++}`);
+    shuffled.push(`BYE${byeCount++}`);
   }
 
   const matches = [];
+
   for (let i = 0; i < shuffled.length; i += 2) {
     matches.push({
       p1: shuffled[i],
@@ -84,6 +86,7 @@ function generateMatches(players) {
       winner: null
     });
   }
+
   return matches;
 }
 
@@ -137,7 +140,6 @@ client.on("messageCreate", async msg => {
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
-  // delete ONLY normal command message
   msg.delete().catch(() => {});
 
   /* CREATE */
@@ -174,13 +176,6 @@ client.on("messageCreate", async msg => {
 
   if (!tournament) return;
 
-  /* DELETE TOURNAMENT */
-  if (cmd === "del") {
-    if (!isStaff(msg.member)) return;
-    tournament = null;
-    return;
-  }
-
   /* START */
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
@@ -197,7 +192,7 @@ client.on("messageCreate", async msg => {
     return;
   }
 
-  /* QUAL */
+  /* QUAL FIXED */
   if (cmd === "qual") {
     if (!isStaff(msg.member)) return;
     if (tournament.started) return;
@@ -217,28 +212,10 @@ client.on("messageCreate", async msg => {
         tournament.players.push(user.id);
     }
 
-    const panel = await msg.channel.messages.fetch(tournament.panelId);
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("register")
-        .setLabel("Register")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId("count")
-        .setLabel(`${tournament.players.length}/${tournament.maxPlayers}`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
-    );
-
-    await panel.edit({
-      embeds: [registrationEmbed()],
-      components: [row]
-    });
     return;
   }
 
-  /* WIN */
+  /* WIN FIXED */
   if (cmd === "win") {
     if (!isStaff(msg.member)) return;
 
@@ -250,6 +227,8 @@ client.on("messageCreate", async msg => {
         ? input.toUpperCase()
         : msg.mentions.users.first()?.id;
 
+    if (!winner) return;
+
     const match = tournament.matches.find(
       m => !m.winner && (m.p1 === winner || m.p2 === winner)
     );
@@ -257,7 +236,6 @@ client.on("messageCreate", async msg => {
 
     match.winner = winner;
 
-    // check round complete
     if (tournament.matches.every(m => m.winner)) {
       const winners = tournament.matches.map(m => m.winner);
 
@@ -275,18 +253,16 @@ client.on("messageCreate", async msg => {
     return;
   }
 
-  /* CODE */
+  /* CODE OLD STYLE RESTORED */
   if (cmd === "code") {
     if (!isStaff(msg.member)) return;
 
-    const code = args[0];
+    const roomCode = args[0];
     const user = msg.mentions.users.first();
-    if (!code || !user) return;
+    if (!roomCode || !user) return;
 
     const match = tournament.matches.find(
-      m =>
-        !m.winner &&
-        (m.p1 === user.id || m.p2 === user.id)
+      m => !m.winner && (m.p1 === user.id || m.p2 === user.id)
     );
     if (!match) return;
 
@@ -297,11 +273,15 @@ client.on("messageCreate", async msg => {
 
       const embed = new EmbedBuilder()
         .setColor("#0099ff")
-        .setTitle("🎮 MATCH ROOM")
+        .setTitle("🎮 SHINTOURS MATCH ROOM")
         .setDescription(`
-Room Code: **${code}**
-Server: **${tournament.server}**
-Map: **${tournament.map}**
+━━━━━━━━━━━━━━━━━━
+🏆 Tournament Match
+🔑 Room Code: **${roomCode}**
+🌍 Server: **${tournament.server}**
+🗺 Map: **${tournament.map}**
+━━━━━━━━━━━━━━━━━━
+Good Luck! 🔥
 `)
         .setTimestamp();
 
