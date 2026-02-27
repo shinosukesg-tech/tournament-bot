@@ -105,17 +105,21 @@ function bracketEmbed() {
     let p1 = m.p1.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
     let p2 = m.p2.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
 
+    let matchTitle = `Match ${i + 1}`;
+
     if (m.winner) {
+      matchTitle += " <:TICK:1467892699578236998>";
+
       if (m.winner === m.p1) {
         p1 += " <:TICK:1467892699578236998>";
         p2 += " <:CROSS:1467892662337278062>";
-      } else if (m.winner === m.p2) {
+      } else {
         p2 += " <:TICK:1467892699578236998>";
         p1 += " <:CROSS:1467892662337278062>";
       }
     }
 
-    desc += `Match ${i + 1}
+    desc += `${matchTitle}
 ${p1} ⚔ ${p2}
 ${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
 
@@ -157,6 +161,7 @@ function controlRow() {
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
 
+  // DELETE ALL NON EMBED MESSAGES
   if (!msg.content.startsWith(PREFIX)) {
     if (!msg.embeds.length) msg.delete().catch(()=>{});
     return;
@@ -229,6 +234,7 @@ client.on("messageCreate", async msg => {
 
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
+
     tournament.started = true;
     tournament.matches = generateMatches(tournament.players);
 
@@ -311,6 +317,8 @@ client.on("messageCreate", async msg => {
       const opponent = await client.users.fetch(opponentId);
       await opponent.send({ embeds: [embed] }).catch(()=>{});
     }
+
+    return; // NO CHANNEL MESSAGE
   }
 });
 
