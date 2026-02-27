@@ -64,7 +64,6 @@ function createTournament(size, server, map, name, channelId) {
 function generateMatches(players) {
   const shuffled = shuffle([...players]);
   const matches = [];
-
   for (let i = 0; i < shuffled.length; i += 2) {
     matches.push({
       p1: shuffled[i],
@@ -72,7 +71,6 @@ function generateMatches(players) {
       winner: null
     });
   }
-
   return matches;
 }
 
@@ -173,6 +171,26 @@ client.on("messageCreate", async msg => {
   const cmd = args.shift().toLowerCase();
   await msg.delete().catch(()=>{});
 
+  if (cmd === "help") {
+    return msg.channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#0099ff")
+          .setTitle("🏆 TOURNAMENT COMMANDS")
+          .setImage(BANNER)
+          .setDescription(`
+;1v1 slots server map name
+;bye
+;start
+;qual @user
+;qual bye1
+;code ROOMCODE @user
+`)
+          .setTimestamp()
+      ]
+    });
+  }
+
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return;
 
@@ -254,6 +272,13 @@ client.on("messageCreate", async msg => {
     const player = msg.mentions.users.first();
     if (!roomCode || !player) return;
 
+    const match = tournament.matches.find(
+      m => m.p1 === player.id || m.p2 === player.id
+    );
+    if (!match) return;
+
+    const opponentId = match.p1 === player.id ? match.p2 : match.p1;
+
     const embed = new EmbedBuilder()
       .setColor("#ff003c")
       .setTitle("🎮 MATCH ROOM DETAILS")
@@ -271,6 +296,11 @@ client.on("messageCreate", async msg => {
       .setTimestamp();
 
     await player.send({ embeds: [embed] }).catch(()=>{});
+
+    if (!opponentId.startsWith("BYE")) {
+      const opponent = await client.users.fetch(opponentId);
+      await opponent.send({ embeds: [embed] }).catch(()=>{});
+    }
   }
 });
 
@@ -279,8 +309,6 @@ client.on("messageCreate", async msg => {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
   if (!tournament) return;
-
-  /* PUBLIC */
 
   if (interaction.customId === "register") {
     if (tournament.players.includes(interaction.user.id))
@@ -306,14 +334,22 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "Unregistered!", ephemeral: true });
   }
 
-  /* STAFF */
-
   if (!isStaff(interaction.member))
     return interaction.reply({ content: "Staff only button.", ephemeral: true });
 
   if (interaction.customId === "next_round") {
 
-    const winners = tournament.matches.filter(m => m.winner).map(m => m.winner);
+    const unfinished = tournament.matches.some(m => !m.winner);
+    if (unfinished) {
+      return interaction.reply({
+        content: "⚠ Finish all matches before starting next round.",
+        ephemeral: true
+      });
+    }
+
+    const winners = tournament.matches
+      .filter(m => m.winner)
+      .map(m => m.winner);
 
     tournament.round++;
     tournament.matches = generateMatches(winners);
