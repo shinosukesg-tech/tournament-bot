@@ -52,19 +52,23 @@ function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
 }
 
-function nextPowerOfTwo(n) {
-  return Math.pow(2, Math.ceil(Math.log2(n)));
+function createTournament(size, server, map, name, channelId) {
+  return {
+    name,
+    maxPlayers: size,
+    server,
+    map,
+    players: [],
+    matches: [],
+    round: 1,
+    started: false,
+    channelId,
+    panelId: null
+  };
 }
 
 function generateMatches(players) {
   const shuffled = shuffle([...players]);
-  const size = nextPowerOfTwo(shuffled.length);
-
-  let byeCount = 1;
-  while (shuffled.length < size) {
-    shuffled.push(`BYE${byeCount++}`);
-  }
-
   const matches = [];
   for (let i = 0; i < shuffled.length; i += 2) {
     matches.push({
@@ -84,11 +88,11 @@ function registrationEmbed() {
     .setTitle(`🏆 ${tournament.name}`)
     .setImage(BANNER)
     .setDescription(`
-🎮 Mode: 1v1
-🌍 Server: ${tournament.server}
-🗺 Map: ${tournament.map}
-👥 Players: ${tournament.players.length}/${tournament.maxPlayers}
-🔓 Status: OPEN
+🎮 Mode: **1v1**
+🌍 Server: **${tournament.server}**
+🗺 Map: **${tournament.map}**
+👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
+🔓 Status: **OPEN**
 `)
     .setTimestamp();
 }
@@ -125,7 +129,7 @@ ${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
     .setTimestamp();
 }
 
-function nextRoundRow() {
+function controlRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("next_round")
@@ -149,77 +153,110 @@ client.on("messageCreate", async msg => {
 
   msg.delete().catch(() => {});
 
+  if (cmd === "help") {
+    return msg.channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#0099ff")
+          .setTitle("🏆 TOURNAMENT COMMANDS")
+          .setImage(BANNER)
+          .setDescription(`
+\`\`\`
+;1v1 slots server map name
+;start
+;bye
+;qual @user
+;qual bye1
+;code ROOM @user
+;del
+\`\`\`
+`)
+      ]
+    });
+  }
+
+  if (cmd === "del") {
+    if (!isStaff(msg.member)) return;
+    tournament = null;
+    return msg.channel.send("🗑 Tournament deleted.");
+  }
+
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return;
 
-    const slots = parseInt(args[0]);
+    const size = parseInt(args[0]);
     const server = args[1];
     const map = args[2];
     const name = args.slice(3).join(" ");
+    if (!size || !server || !map || !name) return;
 
-    tournament = {
-      name,
-      maxPlayers: slots,
-      server,
-      map,
-      players: [],
-      matches: [],
-      round: 1,
-      started: false,
-      channelId: msg.channel.id
-    };
+    tournament = createTournament(size, server, map, name, msg.channel.id);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("register")
-        .setLabel(`Register (0/${slots})`)
+        .setLabel("Register")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("count")
+        .setLabel(`👤 0/${size}`)
         .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
     );
 
-    return msg.channel.send({
+    const panel = await msg.channel.send({
       embeds: [registrationEmbed()],
       components: [row]
     });
+
+    tournament.panelId = panel.id;
+    return;
   }
+
+  if (!tournament) return;
 
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
-    if (!tournament) return;
+    if (tournament.players.length < 2) return;
 
     tournament.started = true;
     tournament.matches = generateMatches(tournament.players);
 
     return msg.channel.send({
       embeds: [bracketEmbed()],
-      components: [nextRoundRow()]
+      components: [controlRow()]
     });
+  }
+
+  if (cmd === "bye") {
+    if (!isStaff(msg.member)) return;
+    tournament.players.push(`BYE${tournament.players.length + 1}`);
+    return msg.channel.send("🤖 BYE added.");
   }
 
   if (cmd === "qual") {
     if (!isStaff(msg.member)) return;
-    if (!tournament) return;
-
-    if (args[0] && args[0].toUpperCase().startsWith("BYE")) {
-      const bye = args[0].toUpperCase();
-      const match = tournament.matches.find(
-        m => m.p1 === bye || m.p2 === bye
-      );
-      if (!match) return;
-      match.winner = bye;
-      return msg.channel.send(`✅ ${bye} qualified.`);
-    }
 
     const player = msg.mentions.users.first();
-    if (!player) return;
+    const byeArg = args[0]?.toUpperCase();
 
-    const match = tournament.matches.find(
-      m => m.p1 === player.id || m.p2 === player.id
-    );
-    if (!match) return;
+    if (player) {
+      const match = tournament.matches.find(
+        m => m.p1 === player.id || m.p2 === player.id
+      );
+      if (!match) return;
+      match.winner = player.id;
+      return msg.channel.send(`✅ ${player} qualified.`);
+    }
 
-    match.winner = player.id;
-
-    return msg.channel.send(`✅ ${player} qualified.`);
+    if (byeArg && byeArg.startsWith("BYE")) {
+      const match = tournament.matches.find(
+        m => m.p1 === byeArg || m.p2 === byeArg
+      );
+      if (!match) return;
+      match.winner = byeArg;
+      return msg.channel.send(`🤖 ${byeArg} qualified.`);
+    }
   }
 
   if (cmd === "code") {
@@ -243,8 +280,8 @@ client.on("messageCreate", async msg => {
       .setTitle("🎮 MATCH ROOM DETAILS")
       .setImage(BANNER)
       .setDescription(`
-🏆 ${tournament.name}
-📊 Round ${tournament.round}
+🏆 **${tournament.name}**
+📊 Round: ${tournament.round}
 
 🔐 Room Code: \`${roomCode}\`
 🌍 Server: ${tournament.server}
@@ -253,14 +290,14 @@ client.on("messageCreate", async msg => {
 ⚔ Opponent:
 ${opponent ? opponent.username : "🤖 BYE"}
 
-🔥 Good Luck!
+🔥 Good Luck & Play Fair!
 `)
       .setTimestamp();
 
     await player.send({ embeds: [embed] }).catch(() => {});
     if (opponent) await opponent.send({ embeds: [embed] }).catch(() => {});
 
-    msg.channel.send("📩 Room code sent in DM.");
+    return msg.channel.send("📩 Code sent in DM.");
   }
 });
 
@@ -277,13 +314,21 @@ client.on("interactionCreate", async interaction => {
     if (tournament.players.includes(interaction.user.id))
       return interaction.reply({ content: "Already registered.", ephemeral: true });
 
+    if (tournament.players.length >= tournament.maxPlayers)
+      return interaction.reply({ content: "Slots full.", ephemeral: true });
+
     tournament.players.push(interaction.user.id);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("register")
-        .setLabel(`Register (${tournament.players.length}/${tournament.maxPlayers})`)
+        .setLabel("Register")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("count")
+        .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
         .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
     );
 
     return interaction.update({
@@ -296,22 +341,25 @@ client.on("interactionCreate", async interaction => {
     if (!isStaff(interaction.member))
       return interaction.reply({ content: "Staff only.", ephemeral: true });
 
-    const winners = tournament.matches.filter(m => m.winner).map(m => m.winner);
+    const winners = tournament.matches
+      .filter(m => m.winner)
+      .map(m => m.winner);
+
     if (winners.length < tournament.matches.length)
-      return interaction.reply({ content: "Matches pending.", ephemeral: true });
+      return interaction.reply({ content: "Complete all matches.", ephemeral: true });
 
     if (winners.length === 1)
-      return interaction.reply({ content: "Final reached. Use Announce Winner.", ephemeral: true });
+      return interaction.reply({ content: "Final reached.", ephemeral: true });
 
     tournament.round++;
     tournament.matches = generateMatches(winners);
 
     await interaction.channel.send({
       embeds: [bracketEmbed()],
-      components: [nextRoundRow()]
+      components: [controlRow()]
     });
 
-    return interaction.reply({ content: "✅ Next round created.", ephemeral: true });
+    return interaction.reply({ content: "Next round created.", ephemeral: true });
   }
 
   if (interaction.customId === "announce_winner") {
@@ -319,8 +367,12 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "Staff only.", ephemeral: true });
 
     const final = tournament.matches[0];
-    if (!final.winner)
-      return interaction.reply({ content: "Final not completed.", ephemeral: true });
+    if (!final?.winner)
+      return interaction.reply({ content: "Final not decided.", ephemeral: true });
+
+    const winner = final.winner.startsWith("BYE")
+      ? final.winner
+      : `<@${final.winner}>`;
 
     return interaction.reply({
       embeds: [
@@ -328,7 +380,8 @@ client.on("interactionCreate", async interaction => {
           .setColor("#ffd700")
           .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
           .setImage(BANNER)
-          .setDescription(`<@${final.winner}> is the Champion!`)
+          .setDescription(`🎉 Winner:\n${winner}`)
+          .setTimestamp()
       ]
     });
   }
