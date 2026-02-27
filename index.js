@@ -21,9 +21,6 @@ const PREFIX = ";";
 const STAFF_ROLE = "Tournament Hoster";
 const BANNER = "https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png";
 
-const TICK = "<:TICK:1467892699578236998>";
-const CROSS = "<:CROSS:1467892662337278062>";
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -36,11 +33,6 @@ const client = new Client({
 });
 
 let tournament = null;
-
-/* ================= READY ================= */
-client.once("clientReady", () => {
-  console.log(`${client.user.tag} is online`);
-});
 
 /* ================= UTIL ================= */
 
@@ -62,23 +54,17 @@ function createTournament(size, server, map, name, channelId) {
     map,
     players: [],
     matches: [],
+    eliminated: [],
     round: 1,
     started: false,
     channelId,
-    panelId: null,
-    bracketMessageId: null,
-    eliminated: []
+    panelId: null
   };
 }
 
 function generateMatches(players) {
   const shuffled = shuffle([...players]);
   const matches = [];
-
-  if (shuffled.length % 2 !== 0) {
-    shuffled.push(`BYE${Date.now()}`);
-  }
-
   for (let i = 0; i < shuffled.length; i += 2) {
     matches.push({
       p1: shuffled[i],
@@ -110,25 +96,23 @@ function bracketEmbed() {
   let desc = `🏆 ROUND ${tournament.round}\n\n`;
 
   tournament.matches.forEach((m, i) => {
-    let p1 = m.p1.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
-    let p2 = m.p2.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
 
-    let title = `Match ${i + 1}`;
+    let p1 = m.p1?.startsWith("BYE") ? `🤖 ${m.p1}` : `<@${m.p1}>`;
+    let p2 = m.p2?.startsWith("BYE") ? `🤖 ${m.p2}` : `<@${m.p2}>`;
 
     if (m.winner) {
-      title += ` ${TICK}`;
-
       if (m.winner === m.p1) {
-        p1 += ` ${TICK}`;
-        if (!m.p2.startsWith("BYE")) p2 += ` ${CROSS}`;
+        p1 += " ✅";
+        p2 += " ❌";
       } else {
-        p2 += ` ${TICK}`;
-        if (!m.p1.startsWith("BYE")) p1 += ` ${CROSS}`;
+        p2 += " ✅";
+        p1 += " ❌";
       }
     }
 
-    desc += `${title}
+    desc += `Match ${i + 1}
 ${p1} ⚔ ${p2}
+${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
 
 `;
   });
@@ -141,13 +125,40 @@ ${p1} ⚔ ${p2}
     .setTimestamp();
 }
 
-function controlRow() {
-  const isFinal = tournament.matches.length === 1;
+/* ================= PANEL BUTTONS ================= */
+
+function panelRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(isFinal ? "announce_winner" : "next_round")
-      .setLabel(isFinal ? "Announce Winner 🏆" : "Next Round")
-      .setStyle(isFinal ? ButtonStyle.Success : ButtonStyle.Primary)
+      .setCustomId("register")
+      .setLabel("Register")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("unregister")
+      .setLabel("Unregister")
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId("count")
+      .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true)
+  );
+}
+
+function controlRow() {
+  if (tournament.matches.length === 1) {
+    return new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("announce_winner")
+        .setLabel("Announce Winner 🏆")
+        .setStyle(ButtonStyle.Success)
+    );
+  }
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("next_round")
+      .setLabel("Next Round")
+      .setStyle(ButtonStyle.Primary)
   );
 }
 
@@ -155,33 +166,94 @@ function controlRow() {
 
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
-
-  if (!msg.content.startsWith(PREFIX)) {
-    if (!msg.embeds.length) {
-      setTimeout(() => msg.delete().catch(()=>{}), 1500);
-    }
-    return;
-  }
+  if (!msg.content.startsWith(PREFIX)) return;
 
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
   await msg.delete().catch(()=>{});
 
+  if (cmd === "1v1") {
+    if (!isStaff(msg.member)) return;
+
+    const size = parseInt(args[0]);
+    const server = args[1];
+    const map = args[2];
+    const name = args.slice(3).join(" ");
+    if (!size || !server || !map || !name) return;
+
+    tournament = createTournament(size, server, map, name, msg.channel.id);
+
+    const panel = await msg.channel.send({
+      embeds: [registrationEmbed()],
+      components: [panelRow()]
+    });
+
+    tournament.panelId = panel.id;
+  }
+
   if (!tournament) return;
 
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
-
     tournament.started = true;
     tournament.matches = generateMatches(tournament.players);
 
-    const bracket = await msg.channel.send({
+    msg.channel.send({
       embeds: [bracketEmbed()],
       components: [controlRow()]
     });
+  }
 
-    tournament.bracketMessageId = bracket.id;
-    return;
+  if (cmd === "qual") {
+    if (!isStaff(msg.member)) return;
+
+    const user = msg.mentions.users.first();
+    if (!user) return;
+
+    const match = tournament.matches.find(
+      m => m.p1 === user.id || m.p2 === user.id
+    );
+    if (!match) return;
+
+    match.winner = user.id;
+    const loser = match.p1 === user.id ? match.p2 : match.p1;
+    if (!loser.startsWith("BYE")) tournament.eliminated.push(loser);
+
+    msg.channel.send({
+      embeds: [bracketEmbed()],
+      components: [controlRow()]
+    });
+  }
+
+  if (cmd === "code") {
+    if (!isStaff(msg.member)) return;
+
+    const roomCode = args[0];
+    const player = msg.mentions.users.first();
+    if (!roomCode || !player) return;
+
+    const match = tournament.matches.find(
+      m => m.p1 === player.id || m.p2 === player.id
+    );
+    if (!match) return;
+
+    const embed = new EmbedBuilder()
+      .setColor("#ff003c")
+      .setTitle("🎮 MATCH ROOM DETAILS")
+      .setImage(BANNER)
+      .setDescription(`
+🏆 **${tournament.name}**
+📊 Round **${tournament.round}**
+
+🔐 Room Code:
+\`\`\`${roomCode}\`\`\`
+
+🌍 ${tournament.server}
+🗺 ${tournament.map}
+`)
+      .setTimestamp();
+
+    await player.send({ embeds: [embed] }).catch(()=>{});
   }
 });
 
@@ -191,9 +263,9 @@ client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
   if (!tournament) return;
 
-  // REGISTER = PUBLIC
-  if (interaction.customId === "register") {
+  /* PUBLIC BUTTONS */
 
+  if (interaction.customId === "register") {
     if (tournament.players.includes(interaction.user.id))
       return interaction.reply({ content: "Already registered", ephemeral: true });
 
@@ -203,42 +275,32 @@ client.on("interactionCreate", async interaction => {
     tournament.players.push(interaction.user.id);
 
     const panel = await interaction.channel.messages.fetch(tournament.panelId);
-
-    await panel.edit({
-      embeds: [registrationEmbed()],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId("register")
-            .setLabel("Register")
-            .setStyle(ButtonStyle.Success)
-            .setDisabled(tournament.players.length >= tournament.maxPlayers),
-          new ButtonBuilder()
-            .setCustomId("count")
-            .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(true)
-        )
-      ]
-    });
+    await panel.edit({ embeds: [registrationEmbed()], components: [panelRow()] });
 
     return interaction.reply({ content: "Registered!", ephemeral: true });
   }
 
-  // STAFF ONLY BUTTONS
-  if (!isStaff(interaction.member)) {
-    return interaction.reply({
-      content: "Only Tournament Hoster can use this button.",
-      ephemeral: true
-    });
+  if (interaction.customId === "unregister") {
+    tournament.players = tournament.players.filter(p => p !== interaction.user.id);
+
+    const panel = await interaction.channel.messages.fetch(tournament.panelId);
+    await panel.edit({ embeds: [registrationEmbed()], components: [panelRow()] });
+
+    return interaction.reply({ content: "Unregistered!", ephemeral: true });
   }
 
+  /* STAFF BUTTONS */
+
+  if (!isStaff(interaction.member))
+    return interaction.reply({ content: "Staff only button.", ephemeral: true });
+
   if (interaction.customId === "next_round") {
+
     const winners = tournament.matches.filter(m => m.winner).map(m => m.winner);
     tournament.round++;
     tournament.matches = generateMatches(winners);
 
-    return interaction.channel.send({
+    interaction.channel.send({
       embeds: [bracketEmbed()],
       components: [controlRow()]
     });
@@ -246,25 +308,32 @@ client.on("interactionCreate", async interaction => {
 
   if (interaction.customId === "announce_winner") {
 
-    const finalMatch = tournament.matches[0];
-    if (!finalMatch.winner)
-      return interaction.reply({ content: "Final not completed", ephemeral: true });
+    const final = tournament.matches[0];
+    if (!final?.winner) return;
 
-    const winner = await client.users.fetch(finalMatch.winner);
+    const winner = await client.users.fetch(final.winner);
 
-    await interaction.channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#ffd700")
-          .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
-          .setThumbnail(winner.displayAvatarURL({ dynamic: true }))
-          .setDescription(`🥇 <@${winner.id}>`)
-          .setImage(BANNER)
-      ]
-    });
+    const big = new EmbedBuilder()
+      .setColor("#FFD700")
+      .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
+      .setThumbnail(winner.displayAvatarURL())
+      .setDescription(`🎉 Congratulations <@${winner.id}>!\n\nYou are the Champion of **${tournament.name}**!`)
+      .setImage(BANNER)
+      .setTimestamp();
 
-    tournament = null;
-    return interaction.reply({ content: "Winner announced", ephemeral: true });
+    const second = final.p1 === final.winner ? final.p2 : final.p1;
+
+    const small = new EmbedBuilder()
+      .setColor("#C0C0C0")
+      .setTitle("🥈 & 🥉 Results")
+      .setDescription(`
+🥈 Second Place: <@${second}>
+🥉 Third Place: <@${tournament.eliminated[tournament.eliminated.length - 2] || "N/A"}>
+`)
+      .setTimestamp();
+
+    interaction.channel.send({ embeds: [big] });
+    interaction.channel.send({ embeds: [small] });
   }
 });
 
