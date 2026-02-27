@@ -54,7 +54,6 @@ function createTournament(size, server, map, name, channelId) {
     map,
     players: [],
     matches: [],
-    eliminated: [],
     round: 1,
     started: false,
     channelId,
@@ -65,6 +64,7 @@ function createTournament(size, server, map, name, channelId) {
 function generateMatches(players) {
   const shuffled = shuffle([...players]);
   const matches = [];
+
   for (let i = 0; i < shuffled.length; i += 2) {
     matches.push({
       p1: shuffled[i],
@@ -72,6 +72,7 @@ function generateMatches(players) {
       winner: null
     });
   }
+
   return matches;
 }
 
@@ -125,7 +126,7 @@ ${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
     .setTimestamp();
 }
 
-/* ================= PANEL BUTTONS ================= */
+/* ================= BUTTON ROWS ================= */
 
 function panelRow() {
   return new ActionRowBuilder().addComponents(
@@ -193,8 +194,21 @@ client.on("messageCreate", async msg => {
 
   if (!tournament) return;
 
+  if (cmd === "bye") {
+    if (!isStaff(msg.member)) return;
+
+    let count = 1;
+    while (tournament.players.length < tournament.maxPlayers) {
+      tournament.players.push(`BYE${count++}`);
+    }
+
+    const panel = await msg.channel.messages.fetch(tournament.panelId);
+    await panel.edit({ embeds: [registrationEmbed()], components: [panelRow()] });
+  }
+
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
+
     tournament.started = true;
     tournament.matches = generateMatches(tournament.players);
 
@@ -207,17 +221,25 @@ client.on("messageCreate", async msg => {
   if (cmd === "qual") {
     if (!isStaff(msg.member)) return;
 
-    const user = msg.mentions.users.first();
-    if (!user) return;
+    const input = args[0];
+    if (!input) return;
+
+    let winnerId;
+
+    if (input.toLowerCase().startsWith("bye")) {
+      winnerId = input.toUpperCase();
+    } else {
+      const user = msg.mentions.users.first();
+      if (!user) return;
+      winnerId = user.id;
+    }
 
     const match = tournament.matches.find(
-      m => m.p1 === user.id || m.p2 === user.id
+      m => m.p1 === winnerId || m.p2 === winnerId
     );
     if (!match) return;
 
-    match.winner = user.id;
-    const loser = match.p1 === user.id ? match.p2 : match.p1;
-    if (!loser.startsWith("BYE")) tournament.eliminated.push(loser);
+    match.winner = winnerId;
 
     msg.channel.send({
       embeds: [bracketEmbed()],
@@ -231,11 +253,6 @@ client.on("messageCreate", async msg => {
     const roomCode = args[0];
     const player = msg.mentions.users.first();
     if (!roomCode || !player) return;
-
-    const match = tournament.matches.find(
-      m => m.p1 === player.id || m.p2 === player.id
-    );
-    if (!match) return;
 
     const embed = new EmbedBuilder()
       .setColor("#ff003c")
@@ -263,7 +280,7 @@ client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
   if (!tournament) return;
 
-  /* PUBLIC BUTTONS */
+  /* PUBLIC */
 
   if (interaction.customId === "register") {
     if (tournament.players.includes(interaction.user.id))
@@ -289,7 +306,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "Unregistered!", ephemeral: true });
   }
 
-  /* STAFF BUTTONS */
+  /* STAFF */
 
   if (!isStaff(interaction.member))
     return interaction.reply({ content: "Staff only button.", ephemeral: true });
@@ -297,6 +314,7 @@ client.on("interactionCreate", async interaction => {
   if (interaction.customId === "next_round") {
 
     const winners = tournament.matches.filter(m => m.winner).map(m => m.winner);
+
     tournament.round++;
     tournament.matches = generateMatches(winners);
 
@@ -317,23 +335,11 @@ client.on("interactionCreate", async interaction => {
       .setColor("#FFD700")
       .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
       .setThumbnail(winner.displayAvatarURL())
-      .setDescription(`🎉 Congratulations <@${winner.id}>!\n\nYou are the Champion of **${tournament.name}**!`)
+      .setDescription(`🎉 Congratulations <@${winner.id}>!\n\nChampion of **${tournament.name}**`)
       .setImage(BANNER)
       .setTimestamp();
 
-    const second = final.p1 === final.winner ? final.p2 : final.p1;
-
-    const small = new EmbedBuilder()
-      .setColor("#C0C0C0")
-      .setTitle("🥈 & 🥉 Results")
-      .setDescription(`
-🥈 Second Place: <@${second}>
-🥉 Third Place: <@${tournament.eliminated[tournament.eliminated.length - 2] || "N/A"}>
-`)
-      .setTimestamp();
-
     interaction.channel.send({ embeds: [big] });
-    interaction.channel.send({ embeds: [small] });
   }
 });
 
