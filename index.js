@@ -21,6 +21,8 @@ const {
 const PREFIX = ";";
 const STAFF_ROLE = "Tournament Hoster";
 const MOD_ROLE = "Moderator";
+const DEFAULT_NAME = "ShinTours Tournament";
+
 const BANNER = "https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png";
 
 const TICK = "<:TICK:1467892699578236998>";
@@ -42,7 +44,7 @@ let tournament = null;
 /* ================= UTIL ================= */
 
 const autoDelete = (msg) =>
-  setTimeout(() => msg.delete().catch(() => {}), 1500);
+  setTimeout(() => msg.delete().catch(() => {}), 2000);
 
 const isStaff = (member) =>
   member.permissions.has(PermissionsBitField.Flags.Administrator) ||
@@ -52,7 +54,7 @@ const shuffle = (arr) =>
   [...arr].sort(() => Math.random() - 0.5);
 
 const allFinished = () =>
-  tournament.matches.every(m => m.winner);
+  tournament && tournament.matches.every(m => m.winner);
 
 /* ================= EMBEDS ================= */
 
@@ -134,12 +136,15 @@ client.on("messageCreate", async msg => {
 
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
-  await msg.delete().catch(()=>{});
+
+  if (msg.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    await msg.delete().catch(()=>{});
+  }
 
   if (cmd === "help") {
     const m = await msg.channel.send(`
 **Tournament Commands**
-;1v1 size server map name
+;1v1 size server map (name optional)
 ;start
 ;qual @player / bye1
 ;code ROOMCODE @player
@@ -164,8 +169,8 @@ client.on("messageCreate", async msg => {
         .setStyle(ButtonStyle.Primary)
     );
 
-    const panel = await msg.channel.send({ embeds: [embed], components: [row] });
-    return autoDelete(panel);
+    await msg.channel.send({ embeds: [embed], components: [row] });
+    return;
   }
 
   if (cmd === "del") {
@@ -180,8 +185,9 @@ client.on("messageCreate", async msg => {
     const size = parseInt(args[0]);
     const server = args[1];
     const map = args[2];
-    const name = args.slice(3).join(" ");
-    if (!size || !server || !map || !name) return;
+    const name = args.slice(3).join(" ") || DEFAULT_NAME;
+
+    if (!size || !server || !map) return;
 
     tournament = {
       name,
@@ -206,6 +212,8 @@ client.on("messageCreate", async msg => {
   if (!tournament) return;
 
   if (cmd === "start") {
+    if (tournament.players.length < 2) return;
+
     tournament.matches = [];
     const shuffled = shuffle(tournament.players);
 
@@ -286,8 +294,10 @@ Round ${tournament.round}
 `);
 
     await user.send({ embeds: [embed] }).catch(()=>{});
-    const opponent = await client.users.fetch(opponentId);
-    await opponent.send({ embeds: [embed] }).catch(()=>{});
+    if (!opponentId.startsWith("BYE")) {
+      const opponent = await client.users.fetch(opponentId);
+      await opponent.send({ embeds: [embed] }).catch(()=>{});
+    }
   }
 });
 
@@ -384,6 +394,8 @@ client.on("interactionCreate", async i => {
 
   if (i.customId === "announce") {
     const winnerId = tournament.matches[0].winner;
+    if (!winnerId) return;
+
     const user = await client.users.fetch(winnerId);
 
     const embed = new EmbedBuilder()
