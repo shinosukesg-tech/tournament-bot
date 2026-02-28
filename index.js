@@ -77,7 +77,8 @@ function registrationRow() {
     new ButtonBuilder()
       .setCustomId("register")
       .setLabel("Register")
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(tournament.players.length >= tournament.maxPlayers),
     new ButtonBuilder()
       .setCustomId("unregister")
       .setLabel("Unregister")
@@ -127,38 +128,6 @@ client.on("messageCreate", async msg => {
   const cmd = args.shift().toLowerCase();
   await msg.delete().catch(()=>{});
 
-  /* ========= HELP ========= */
-  if (cmd === "help") {
-    const embed = new EmbedBuilder()
-      .setColor("#5865F2")
-      .setTitle("📖 Tournament Bot Commands")
-      .setImage(BANNER)
-      .addFields(
-        { name: "🏆 Tournament", value: "`;1v1 <size> <server> <map> <name>`\n`;start`\n`;bye`\n`;qual @user`\n`;qual bye1`", inline: false },
-        { name: "🛠 Moderation", value: "`;purge <amount>`\n`;ban @user`\n`;mute @user 10m`", inline: false },
-        { name: "🎫 Tickets", value: "`;ticketpanel add #channel`", inline: false },
-        { name: "💻 Utility", value: "`;code <text>`", inline: false }
-      )
-      .setTimestamp();
-
-    return msg.channel.send({ embeds: [embed] });
-  }
-
-  /* ========= CODE ========= */
-
-  if (cmd === "code") {
-    const codeText = args.join(" ");
-    if (!codeText) return;
-
-    const embed = new EmbedBuilder()
-      .setColor("#2f3136")
-      .setTitle("📜 Code Output")
-      .setDescription(`\`\`\`\n${codeText}\n\`\`\``)
-      .setTimestamp();
-
-    return msg.channel.send({ embeds: [embed] });
-  }
-
   /* ========= MODERATION ========= */
 
   if (cmd === "purge") {
@@ -168,45 +137,56 @@ client.on("messageCreate", async msg => {
     await msg.channel.bulkDelete(amount, true).catch(()=>{});
   }
 
-  if (cmd === "ban") {
-    if (!isMod(msg.member)) return;
-    const member = msg.mentions.members.first();
-    if (!member) return;
-    await member.ban().catch(()=>{});
-  }
-
   if (cmd === "mute") {
     if (!isMod(msg.member)) return;
-
     const member = msg.mentions.members.first();
     const time = args[1];
     if (!member || !time) return;
 
     let muted = msg.guild.roles.cache.find(r => r.name === "Muted");
-
-    if (!muted) {
-      muted = await msg.guild.roles.create({ name: "Muted" });
-
-      msg.guild.channels.cache.forEach(c => {
-        c.permissionOverwrites.edit(muted, {
-          SendMessages: false,
-          AddReactions: false
-        }).catch(()=>{});
-      });
-    }
+    if (!muted) muted = await msg.guild.roles.create({ name: "Muted" });
 
     await member.roles.add(muted);
 
     const ms =
       time.endsWith("m") ? parseInt(time) * 60000 :
-      time.endsWith("h") ? parseInt(time) * 3600000 :
-      time.endsWith("d") ? parseInt(time) * 86400000 : null;
+      time.endsWith("h") ? parseInt(time) * 3600000 : null;
 
     if (!ms) return;
+    setTimeout(() => member.roles.remove(muted).catch(()=>{}), ms);
+  }
 
-    setTimeout(() => {
-      member.roles.remove(muted).catch(()=>{});
-    }, ms);
+  /* ========= TICKET PANEL ========= */
+
+  if (cmd === "ticketpanel" && args[0] === "add") {
+    if (!isMod(msg.member)) return;
+    const channel = msg.mentions.channels.first();
+    if (!channel) return;
+
+    const categories = msg.guild.channels.cache
+      .filter(c => c.type === ChannelType.GuildCategory)
+      .map(c => ({
+        label: c.name,
+        value: c.id
+      }))
+      .slice(0, 25);
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId("ticket_category_select")
+      .setPlaceholder("Select Ticket Category")
+      .addOptions(categories);
+
+    const row = new ActionRowBuilder().addComponents(select);
+
+    channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#0099ff")
+          .setTitle("🎫 Ticket Setup")
+          .setDescription("Select category where tickets should be created.")
+      ],
+      components: [row]
+    });
   }
 
   /* ========= TOURNAMENT ========= */
@@ -245,58 +225,66 @@ client.on("messageCreate", async msg => {
   if (cmd === "bye") {
     let count = 1;
     while (tournament.players.length < tournament.maxPlayers) {
-      tournament.players.push(`BYE${count}`);
-      count++;
+      tournament.players.push(`BYE${count++}`);
     }
   }
 
-  if (cmd === "start") {
-    tournament.matches = [];
-    const shuffled = shuffle(tournament.players);
-
-    for (let i = 0; i < shuffled.length; i += 2) {
-      tournament.matches.push({
-        p1: shuffled[i],
-        p2: shuffled[i + 1],
-        winner: null
-      });
-    }
-
-    const bracket = await msg.channel.send({
-      embeds: [bracketEmbed()],
-      components: [controlRow()]
-    });
-
-    tournament.bracketId = bracket.id;
+  if (cmd === "qual" && args[0]?.toLowerCase().startsWith("bye")) {
+    const bye = args[0].toUpperCase();
+    const match = tournament.matches.find(m => m.p1 === bye || m.p2 === bye);
+    if (!match) return;
+    match.winner = bye;
   }
 
-  if (cmd === "qual") {
-    const target = args[0];
-    if (!target) return;
-
-    let winner;
-
-    if (target.startsWith("bye")) {
-      winner = target.toUpperCase();
-    } else {
-      const user = msg.mentions.users.first();
-      if (!user) return;
-      winner = user.id;
-    }
+  if (cmd === "code") {
+    const roomCode = args[0];
+    const mentioned = msg.mentions.users.first();
+    if (!roomCode || !mentioned) return;
 
     const match = tournament.matches.find(
-      m => m.p1 === winner || m.p2 === winner
+      m => m.p1 === mentioned.id || m.p2 === mentioned.id
     );
-
     if (!match) return;
 
-    match.winner = winner;
+    const opponent1 = match.p1.startsWith("BYE") ? null : match.p1;
+    const opponent2 = match.p2.startsWith("BYE") ? null : match.p2;
 
-    const bracketMsg = await msg.channel.messages.fetch(tournament.bracketId);
-    await bracketMsg.edit({
-      embeds: [bracketEmbed()],
-      components: [controlRow()]
-    });
+    const embed = new EmbedBuilder()
+      .setColor("#2f3136")
+      .setTitle("🎮 Room Code")
+      .setDescription(`Room Code: **${roomCode}**`);
+
+    if (opponent1) await client.users.fetch(opponent1).then(u=>u.send({embeds:[embed]})).catch(()=>{});
+    if (opponent2) await client.users.fetch(opponent2).then(u=>u.send({embeds:[embed]})).catch(()=>{});
+  }
+});
+
+/* ================= BUTTONS ================= */
+
+client.on("interactionCreate", async i => {
+
+  if (i.isButton() && i.customId === "register") {
+    if (tournament.players.includes(i.user.id)) 
+      return i.reply({ content: "Already registered.", ephemeral: true });
+
+    if (tournament.players.length >= tournament.maxPlayers)
+      return i.reply({ content: "Tournament Full.", ephemeral: true });
+
+    tournament.players.push(i.user.id);
+
+    const panel = await i.channel.messages.fetch(tournament.panelId);
+    await panel.edit({ embeds: [registrationEmbed()], components: [registrationRow()] });
+
+    return i.reply({ content: "Registered!", ephemeral: true });
+  }
+
+  if (i.isButton() && i.customId === "unregister") {
+    tournament.players = tournament.players.filter(p => p !== i.user.id);
+
+    const panel = await i.channel.messages.fetch(tournament.panelId);
+    await panel.edit({ embeds: [registrationEmbed()], components: [registrationRow()] });
+
+    return i.reply({ content: "Unregistered!", ephemeral: true });
   }
 });
 
