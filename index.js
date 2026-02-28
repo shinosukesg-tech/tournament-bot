@@ -40,10 +40,6 @@ const isStaff = (member) =>
   member.permissions.has(PermissionsBitField.Flags.Administrator) ||
   member.roles.cache.some(r => r.name === STAFF_ROLE);
 
-const isMod = (member) =>
-  member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-  member.roles.cache.some(r => r.name === MOD_ROLE);
-
 const shuffle = (arr) => [...arr].sort(() => Math.random() - 0.5);
 
 const allFinished = () =>
@@ -78,7 +74,7 @@ function registrationRow() {
       .setLabel("Unregister")
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId("counter")
+      .setCustomId("count")
       .setLabel(`Players: ${tournament.players.length}`)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(true)
@@ -126,7 +122,27 @@ client.on("messageCreate", async msg => {
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
-  /* ========= CREATE TOURNAMENT ========= */
+  /* ========= HELP ========= */
+  if (cmd === "help") {
+    return msg.channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#5865F2")
+          .setTitle("📖 Tournament Bot Commands")
+          .setImage(BANNER)
+          .setDescription(`
+🏆 **Tournament**
+;1v1 <size> <server> <map> <name>
+;start
+;bye @user
+;qual @user
+;code <roomcode> @user
+`)
+      ]
+    });
+  }
+
+  /* ========= CREATE ========= */
   if (cmd === "1v1") {
     if (!isStaff(msg.member)) return;
 
@@ -148,18 +164,16 @@ client.on("messageCreate", async msg => {
       bracketMessage: null
     };
 
-    const panel = await msg.channel.send({
+    await msg.channel.send({
       embeds: [registrationEmbed()],
       components: [registrationRow()]
     });
-
-    tournament.panelMessage = panel.id;
   }
 
   /* ========= START ========= */
   if (cmd === "start") {
     if (!isStaff(msg.member)) return;
-    if (!tournament) return msg.reply("No tournament created.");
+    if (!tournament) return msg.reply("No tournament found.");
     if (tournament.players.length < 2)
       return msg.reply("Not enough players.");
 
@@ -182,28 +196,30 @@ client.on("messageCreate", async msg => {
     tournament.bracketMessage = bracketMsg.id;
   }
 
+  /* ========= BYE ========= */
+  if (cmd === "bye") {
+    if (!isStaff(msg.member) || !tournament) return;
+    const user = msg.mentions.users.first();
+    if (!user) return;
+
+    tournament.players = tournament.players.filter(p => p !== user.id);
+    msg.channel.send(`${user.username} removed from tournament.`);
+  }
+
   /* ========= QUAL ========= */
   if (cmd === "qual") {
     if (!isStaff(msg.member) || !tournament) return;
 
-    const mention = msg.mentions.users.first();
-    const arg = args[0];
-
-    let winnerId = null;
-
-    if (mention) winnerId = mention.id;
-    else if (arg && arg.toLowerCase().startsWith("bye"))
-      winnerId = arg.toUpperCase();
-
-    if (!winnerId) return;
+    const user = msg.mentions.users.first();
+    if (!user) return;
 
     const match = tournament.matches.find(
-      m => (m.p1 === winnerId || m.p2 === winnerId) && !m.winner
+      m => (m.p1 === user.id || m.p2 === user.id) && !m.winner
     );
 
     if (!match) return;
 
-    match.winner = winnerId;
+    match.winner = user.id;
 
     const bracketMsg = await msg.channel.messages.fetch(tournament.bracketMessage);
     await bracketMsg.edit({
@@ -217,43 +233,35 @@ client.on("messageCreate", async msg => {
     if (!isStaff(msg.member) || !tournament) return;
 
     const roomCode = args[0];
-    const mentioned = msg.mentions.users.first();
+    const user = msg.mentions.users.first();
+    if (!roomCode || !user) return;
 
-    if (!roomCode) return;
+    const match = tournament.matches.find(
+      m => m.p1 === user.id || m.p2 === user.id
+    );
 
-    let match;
+    if (!match) return;
 
-    if (mentioned) {
-      match = tournament.matches.find(
-        m => m.p1 === mentioned.id || m.p2 === mentioned.id
-      );
-    }
-
-    if (!match) return msg.reply("Match not found.");
-
-    const p1 = await client.users.fetch(match.p1).catch(()=>null);
+    const p1 = await client.users.fetch(match.p1);
     const p2 = match.p2.startsWith("BYE")
       ? null
-      : await client.users.fetch(match.p2).catch(()=>null);
+      : await client.users.fetch(match.p2);
 
-    if (p1) p1.send(`🎮 Your Room Code: **${roomCode}**`);
-    if (p2) p2.send(`🎮 Your Room Code: **${roomCode}**`);
+    if (p1) p1.send(`🎮 Room Code: ${roomCode}`);
+    if (p2) p2.send(`🎮 Room Code: ${roomCode}`);
 
-    msg.channel.send("Room code sent to both players.");
+    msg.channel.send("Code sent to both opponents.");
   }
-
 });
 
-/* ================= INTERACTIONS ================= */
+/* ================= BUTTONS ================= */
 
 client.on("interactionCreate", async i => {
-
   if (!i.isButton()) return;
 
-  /* REGISTER */
-  if (i.customId === "register") {
-    if (!tournament) return i.reply({ content: "No tournament.", ephemeral: true });
+  if (!tournament) return;
 
+  if (i.customId === "register") {
     if (!tournament.players.includes(i.user.id))
       tournament.players.push(i.user.id);
 
@@ -263,7 +271,6 @@ client.on("interactionCreate", async i => {
     });
   }
 
-  /* UNREGISTER */
   if (i.customId === "unregister") {
     tournament.players = tournament.players.filter(p => p !== i.user.id);
 
@@ -273,9 +280,8 @@ client.on("interactionCreate", async i => {
     });
   }
 
-  /* NEXT */
   if (i.customId === "next") {
-    if (!isStaff(i.member) || !allFinished()) return;
+    if (!allFinished()) return;
 
     const winners = tournament.matches.map(m => m.winner);
     tournament.round++;
@@ -295,10 +301,7 @@ client.on("interactionCreate", async i => {
     });
   }
 
-  /* ANNOUNCE */
   if (i.customId === "announce") {
-    if (!isStaff(i.member)) return;
-
     const winnerId = tournament.matches[0].winner;
     const winnerUser = await client.users.fetch(winnerId);
 
