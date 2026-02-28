@@ -33,7 +33,6 @@ const client = new Client({
 });
 
 let tournament = null;
-let ticketCategory = null;
 
 /* ================= UTIL ================= */
 
@@ -48,6 +47,7 @@ const isMod = (member) =>
 const shuffle = (arr) => [...arr].sort(() => Math.random() - 0.5);
 
 const allFinished = () =>
+  tournament &&
   tournament.matches.length > 0 &&
   tournament.matches.every(m => m.winner);
 
@@ -64,8 +64,7 @@ function registrationEmbed() {
 🗺 Map: **${tournament.map}**
 👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
 🔓 Status: **OPEN**
-`)
-    .setTimestamp();
+`);
 }
 
 function registrationRow() {
@@ -77,7 +76,12 @@ function registrationRow() {
     new ButtonBuilder()
       .setCustomId("unregister")
       .setLabel("Unregister")
-      .setStyle(ButtonStyle.Danger)
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId("counter")
+      .setLabel(`Players: ${tournament.players.length}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true)
   );
 }
 
@@ -89,7 +93,7 @@ function bracketEmbed() {
     const p2 = m.p2.startsWith("BYE") ? m.p2 : `<@${m.p2}>`;
 
     desc += `Match ${i + 1}
-${p1}  🆚  ${p2}
+${p1} 🆚 ${p2}
 ${m.winner ? `Winner: ${m.winner.startsWith("BYE") ? m.winner : `<@${m.winner}>`} ✅` : "⏳ Pending"}
 
 `;
@@ -99,8 +103,7 @@ ${m.winner ? `Winner: ${m.winner.startsWith("BYE") ? m.winner : `<@${m.winner}>`
     .setColor("#00ff88")
     .setTitle("📊 LIVE BRACKET")
     .setImage(BANNER)
-    .setDescription(desc)
-    .setTimestamp();
+    .setDescription(desc);
 }
 
 function controlRow() {
@@ -122,24 +125,6 @@ client.on("messageCreate", async msg => {
 
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
-  await msg.delete().catch(()=>{});
-
-  /* ========= HELP ========= */
-  if (cmd === "help") {
-    return msg.channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#5865F2")
-          .setTitle("📖 Tournament Bot Commands")
-          .setImage(BANNER)
-          .addFields(
-            { name: "🏆 Tournament", value: "`;1v1 <size> <server> <map> <name>`\n`;start`\n`;qual @user`\n`;qual bye1`", inline: false },
-            { name: "🛡 Moderation", value: "`;ban @user`\n`;mute @user 10m`\n`;purge 20`", inline: false },
-            { name: "🎫 Tickets", value: "`;ticketpanel add #channel`", inline: false }
-          )
-      ]
-    });
-  }
 
   /* ========= CREATE TOURNAMENT ========= */
   if (cmd === "1v1") {
@@ -173,8 +158,10 @@ client.on("messageCreate", async msg => {
 
   /* ========= START ========= */
   if (cmd === "start") {
-    if (!isStaff(msg.member) || !tournament) return;
-    if (tournament.players.length < 2) return;
+    if (!isStaff(msg.member)) return;
+    if (!tournament) return msg.reply("No tournament created.");
+    if (tournament.players.length < 2)
+      return msg.reply("Not enough players.");
 
     const shuffled = shuffle(tournament.players);
     tournament.matches = [];
@@ -225,177 +212,109 @@ client.on("messageCreate", async msg => {
     });
   }
 
-  /* ========= PURGE ========= */
-  if (cmd === "purge") {
-    if (!isMod(msg.member)) return;
-    const amount = parseInt(args[0]);
-    if (!amount || amount < 1 || amount > 100) return;
-    await msg.channel.bulkDelete(amount, true).catch(()=>{});
+  /* ========= CODE ========= */
+  if (cmd === "code") {
+    if (!isStaff(msg.member) || !tournament) return;
+
+    const roomCode = args[0];
+    const mentioned = msg.mentions.users.first();
+
+    if (!roomCode) return;
+
+    let match;
+
+    if (mentioned) {
+      match = tournament.matches.find(
+        m => m.p1 === mentioned.id || m.p2 === mentioned.id
+      );
+    }
+
+    if (!match) return msg.reply("Match not found.");
+
+    const p1 = await client.users.fetch(match.p1).catch(()=>null);
+    const p2 = match.p2.startsWith("BYE")
+      ? null
+      : await client.users.fetch(match.p2).catch(()=>null);
+
+    if (p1) p1.send(`🎮 Your Room Code: **${roomCode}**`);
+    if (p2) p2.send(`🎮 Your Room Code: **${roomCode}**`);
+
+    msg.channel.send("Room code sent to both players.");
   }
 
-  /* ========= BAN ========= */
-  if (cmd === "ban") {
-    if (!isMod(msg.member)) return;
-    const user = msg.mentions.members.first();
-    if (!user) return;
-    await user.ban().catch(()=>{});
-    msg.channel.send(`🔨 ${user.user.tag} banned.`);
-  }
-
-  /* ========= MUTE ========= */
-  if (cmd === "mute") {
-    if (!isMod(msg.member)) return;
-    const member = msg.mentions.members.first();
-    const time = args[1];
-    if (!member || !time) return;
-
-    let muted = msg.guild.roles.cache.find(r => r.name === "Muted");
-    if (!muted)
-      muted = await msg.guild.roles.create({ name: "Muted", permissions: [] });
-
-    await member.roles.add(muted);
-
-    const ms =
-      time.endsWith("m") ? parseInt(time) * 60000 :
-      time.endsWith("h") ? parseInt(time) * 3600000 :
-      time.endsWith("d") ? parseInt(time) * 86400000 : null;
-
-    if (!ms) return;
-
-    setTimeout(() => member.roles.remove(muted).catch(()=>{}), ms);
-  }
-
-  /* ========= TICKET PANEL ========= */
-  if (cmd === "ticketpanel" && args[0] === "add") {
-    if (!isMod(msg.member)) return;
-    const channel = msg.mentions.channels.first();
-    if (!channel) return;
-
-    channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#5865F2")
-          .setTitle("🎫 Support & Applications")
-          .setDescription("For Staff Application and support, Create a ticket with the button below")
-      ],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId("create_ticket")
-            .setLabel("Create Ticket")
-            .setStyle(ButtonStyle.Primary)
-        )
-      ]
-    });
-  }
 });
 
 /* ================= INTERACTIONS ================= */
 
 client.on("interactionCreate", async i => {
 
-  if (i.isButton()) {
+  if (!i.isButton()) return;
 
-    /* REGISTER */
-    if (i.customId === "register") {
-      if (!tournament) return i.reply({ content: "No active tournament.", ephemeral: true });
-      if (tournament.players.includes(i.user.id))
-        return i.reply({ content: "Already registered.", ephemeral: true });
-      if (tournament.players.length >= tournament.maxPlayers)
-        return i.reply({ content: "Tournament full.", ephemeral: true });
+  /* REGISTER */
+  if (i.customId === "register") {
+    if (!tournament) return i.reply({ content: "No tournament.", ephemeral: true });
 
+    if (!tournament.players.includes(i.user.id))
       tournament.players.push(i.user.id);
-      await i.update({ embeds: [registrationEmbed()], components: [registrationRow()] });
-    }
 
-    /* UNREGISTER */
-    if (i.customId === "unregister") {
-      tournament.players = tournament.players.filter(p => p !== i.user.id);
-      await i.update({ embeds: [registrationEmbed()], components: [registrationRow()] });
-    }
+    await i.update({
+      embeds: [registrationEmbed()],
+      components: [registrationRow()]
+    });
+  }
 
-    /* NEXT ROUND */
-    if (i.customId === "next") {
-      if (!isStaff(i.member) || !allFinished()) return;
+  /* UNREGISTER */
+  if (i.customId === "unregister") {
+    tournament.players = tournament.players.filter(p => p !== i.user.id);
 
-      const winners = tournament.matches.map(m => m.winner);
-      tournament.round++;
-      tournament.matches = [];
+    await i.update({
+      embeds: [registrationEmbed()],
+      components: [registrationRow()]
+    });
+  }
 
-      for (let i = 0; i < winners.length; i += 2) {
-        tournament.matches.push({
-          p1: winners[i],
-          p2: winners[i + 1] || `BYE${i}`,
-          winner: null
-        });
-      }
+  /* NEXT */
+  if (i.customId === "next") {
+    if (!isStaff(i.member) || !allFinished()) return;
 
-      await i.update({
-        embeds: [bracketEmbed()],
-        components: [controlRow()]
+    const winners = tournament.matches.map(m => m.winner);
+    tournament.round++;
+    tournament.matches = [];
+
+    for (let x = 0; x < winners.length; x += 2) {
+      tournament.matches.push({
+        p1: winners[x],
+        p2: winners[x + 1] || `BYE${x}`,
+        winner: null
       });
     }
 
-    /* ANNOUNCE */
-    if (i.customId === "announce") {
-      if (!isStaff(i.member)) return;
+    await i.update({
+      embeds: [bracketEmbed()],
+      components: [controlRow()]
+    });
+  }
 
-      const finalMatch = tournament.matches[0];
-      const winnerUser = await client.users.fetch(finalMatch.winner);
+  /* ANNOUNCE */
+  if (i.customId === "announce") {
+    if (!isStaff(i.member)) return;
 
-      await i.update({
-        embeds: [
-          new EmbedBuilder()
-            .setColor("Gold")
-            .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
-            .setThumbnail(winnerUser.displayAvatarURL({ size: 512 }))
-            .setImage(winnerUser.displayAvatarURL({ size: 1024 }))
-            .setDescription(`👑 Congratulations <@${winnerUser.id}>!\n\nYou are the champion of **${tournament.name}**`)
-        ],
-        components: []
-      });
+    const winnerId = tournament.matches[0].winner;
+    const winnerUser = await client.users.fetch(winnerId);
 
-      tournament = null;
-    }
+    await i.update({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("Gold")
+          .setTitle("🏆 TOURNAMENT CHAMPION 🏆")
+          .setThumbnail(winnerUser.displayAvatarURL({ size: 512 }))
+          .setImage(winnerUser.displayAvatarURL({ size: 1024 }))
+          .setDescription(`👑 Congratulations <@${winnerUser.id}>!`)
+      ],
+      components: []
+    });
 
-    /* CREATE TICKET */
-    if (i.customId === "create_ticket") {
-      const modRole = i.guild.roles.cache.find(r => r.name === MOD_ROLE);
-      if (!modRole) return i.reply({ content: "Moderator role not found.", ephemeral: true });
-
-      const ticket = await i.guild.channels.create({
-        name: `ticket-${i.user.username}`,
-        type: ChannelType.GuildText,
-        permissionOverwrites: [
-          { id: i.guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-          { id: modRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-
-      await ticket.send({
-        embeds: [new EmbedBuilder().setColor("#5865F2").setTitle("🎫 Ticket Opened")],
-        components: [
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId("close_ticket")
-              .setLabel("Close Ticket")
-              .setStyle(ButtonStyle.Danger)
-          )
-        ]
-      });
-
-      i.reply({ content: "Ticket Created!", ephemeral: true });
-    }
-
-    /* CLOSE TICKET */
-    if (i.customId === "close_ticket") {
-      if (!isMod(i.member))
-        return i.reply({ content: "Only Moderator can close tickets.", ephemeral: true });
-
-      await i.reply({ content: "Closing...", ephemeral: true });
-      setTimeout(() => i.channel.delete().catch(()=>{}), 2000);
-    }
+    tournament = null;
   }
 });
 
