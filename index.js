@@ -49,8 +49,7 @@ const isMod = (member) =>
   member.permissions.has(PermissionsBitField.Flags.Administrator) ||
   member.roles.cache.some(r => r.name === MOD_ROLE);
 
-const shuffle = (arr) =>
-  [...arr].sort(() => Math.random() - 0.5);
+const shuffle = (arr) => [...arr].sort(() => Math.random() - 0.5);
 
 const allFinished = () =>
   tournament.matches.every(m => m.winner);
@@ -135,11 +134,23 @@ client.on("messageCreate", async msg => {
       .setImage(BANNER)
       .addFields(
         { name: "🏆 Tournament", value: "`;1v1 <size> <server> <map> <name>`\n`;start`\n`;bye`\n`;qual @user`\n`;qual bye1`", inline: false },
+        { name: "🛡 Moderation", value: "`;ban @user`", inline: false },
         { name: "🎫 Tickets", value: "`;ticketpanel add #channel`", inline: false }
       )
       .setTimestamp();
 
     return msg.channel.send({ embeds: [embed] });
+  }
+
+  /* ========= BAN ========= */
+  if (cmd === "ban") {
+    if (!isMod(msg.member)) return;
+
+    const user = msg.mentions.members.first();
+    if (!user) return;
+
+    await user.ban({ reason: "Banned by Moderator" }).catch(()=>{});
+    return msg.channel.send(`🔨 ${user.user.tag} has been banned.`);
   }
 
   /* ========= CREATE TOURNAMENT ========= */
@@ -177,13 +188,16 @@ client.on("messageCreate", async msg => {
 
   /* ========= START ========= */
   if (cmd === "start") {
+    if (!isStaff(msg.member)) return;
+    if (tournament.players.length < 2) return;
+
     tournament.matches = [];
     const shuffled = shuffle(tournament.players);
 
     for (let i = 0; i < shuffled.length; i += 2) {
       tournament.matches.push({
         p1: shuffled[i],
-        p2: shuffled[i + 1],
+        p2: shuffled[i + 1] || "BYE_AUTO",
         winner: null
       });
     }
@@ -196,8 +210,9 @@ client.on("messageCreate", async msg => {
     tournament.bracketId = bracket.id;
   }
 
-  /* ========= FILL BYE ========= */
+  /* ========= BYE ========= */
   if (cmd === "bye") {
+    if (!isStaff(msg.member)) return;
     let count = 1;
     while (tournament.players.length < tournament.maxPlayers) {
       tournament.players.push(`BYE${count}`);
@@ -207,13 +222,14 @@ client.on("messageCreate", async msg => {
 
   /* ========= QUAL ========= */
   if (cmd === "qual") {
-    const target = args[0];
+    if (!isStaff(msg.member)) return;
 
+    const target = args[0];
     if (!target) return;
 
     let winner;
 
-    if (target.startsWith("bye")) {
+    if (target.toLowerCase().startsWith("bye")) {
       winner = target.toUpperCase();
     } else {
       const user = msg.mentions.users.first();
@@ -224,7 +240,6 @@ client.on("messageCreate", async msg => {
     const match = tournament.matches.find(
       m => m.p1 === winner || m.p2 === winner
     );
-
     if (!match) return;
 
     match.winner = winner;
@@ -233,37 +248,6 @@ client.on("messageCreate", async msg => {
     await bracketMsg.edit({
       embeds: [bracketEmbed()],
       components: [controlRow()]
-    });
-  }
-
-  /* ========= TICKET PANEL ========= */
-  if (cmd === "ticketpanel" && args[0] === "add") {
-    if (!isMod(msg.member)) return;
-
-    const channel = msg.mentions.channels.first();
-    if (!channel) return;
-
-    const categories = msg.guild.channels.cache
-      .filter(c => c.type === ChannelType.GuildCategory)
-      .map(c => ({
-        label: c.name,
-        value: c.id
-      }))
-      .slice(0, 25);
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId("ticket_category_select")
-      .setPlaceholder("Select Ticket Category")
-      .addOptions(categories);
-
-    channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#0099ff")
-          .setTitle("🎫 Support Ticket")
-          .setDescription("If you want to apply for staff or any enquiry open a ticket.")
-      ],
-      components: [new ActionRowBuilder().addComponents(select)]
     });
   }
 });
@@ -302,14 +286,16 @@ client.on("interactionCreate", async i => {
     }
 
     if (i.customId === "next") {
+      if (!isStaff(i.member)) return i.reply({ content: "Only staff can do this.", ephemeral: true });
+
       const winners = tournament.matches.map(m => m.winner);
       tournament.round++;
       tournament.matches = [];
 
-      for (let i = 0; i < winners.length; i += 2) {
+      for (let x = 0; x < winners.length; x += 2) {
         tournament.matches.push({
-          p1: winners[i],
-          p2: winners[i + 1],
+          p1: winners[x],
+          p2: winners[x + 1] || "BYE_AUTO",
           winner: null
         });
       }
@@ -324,68 +310,20 @@ client.on("interactionCreate", async i => {
     }
 
     if (i.customId === "announce") {
-      const winner = tournament.matches[0].winner;
+      if (!isStaff(i.member)) return;
 
+      const winner = tournament.matches[0].winner;
       await i.channel.send(`🏆 Winner: ${winner.startsWith("BYE") ? winner : `<@${winner}>`}`);
       tournament = null;
-      return;
-    }
-
-    if (i.customId === "create_ticket") {
-      const modRole = i.guild.roles.cache.find(r => r.name === MOD_ROLE);
-      if (!ticketCategory) return;
-
-      const ticket = await i.guild.channels.create({
-        name: `ticket-${i.user.username}`,
-        type: ChannelType.GuildText,
-        parent: ticketCategory,
-        permissionOverwrites: [
-          { id: i.guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: i.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-          { id: modRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("close_ticket")
-          .setLabel("Close Ticket")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      ticket.send({
-        content: `Ticket created for ${i.user}`,
-        components: [row]
-      });
-
-      return i.reply({ content: "Ticket Created!", ephemeral: true });
     }
 
     if (i.customId === "close_ticket") {
-      await i.reply({ content: "Closing...", ephemeral: true });
+      if (!isMod(i.member))
+        return i.reply({ content: "Only Moderator can close tickets.", ephemeral: true });
+
+      await i.reply({ content: "Closing ticket...", ephemeral: true });
       setTimeout(() => i.channel.delete().catch(()=>{}), 2000);
     }
-  }
-
-  if (i.isStringSelectMenu() && i.customId === "ticket_category_select") {
-    ticketCategory = i.values[0];
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("create_ticket")
-        .setLabel("Create Ticket")
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    await i.update({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#00ff88")
-          .setTitle("🎫 Support Ticket")
-          .setDescription("If you want to apply for staff or any enquiry open a ticket.")
-      ],
-      components: [row]
-    });
   }
 });
 
