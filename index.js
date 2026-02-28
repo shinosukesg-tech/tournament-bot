@@ -28,34 +28,20 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: ["CHANNEL"]
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 let tournament = null;
 
 /* ================= UTIL ================= */
 
-const autoDelete = (msg) =>
-  setTimeout(() => msg.delete().catch(() => {}), 1500);
-
 const isStaff = (member) =>
-  member.permissions.has(PermissionsBitField.Flags.Administrator) ||
   member.roles.cache.some(r => r.name === STAFF_ROLE);
 
 const isMod = (member) =>
   member.permissions.has(PermissionsBitField.Flags.Administrator) ||
   member.roles.cache.some(r => r.name === MOD_ROLE);
-
-const parseTime = (time) => {
-  const num = parseInt(time);
-  if (time.endsWith("m")) return num * 60 * 1000;
-  if (time.endsWith("h")) return num * 60 * 60 * 1000;
-  if (time.endsWith("d")) return num * 24 * 60 * 60 * 1000;
-  return null;
-};
 
 /* ================= READY ================= */
 
@@ -71,101 +57,104 @@ client.on("messageCreate", async msg => {
   const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
 
+  /* ================= HELP ================= */
+  if (cmd === "help") {
+    const embed = new EmbedBuilder()
+      .setColor("#5865F2")
+      .setTitle("🏆 Tournament Bot Help")
+      .addFields(
+        { name: "🎮 Tournament",
+          value:
+          "`;1v1 <players> <server> <map>`\n" +
+          "`;qual @player`\n" +
+          "`;qual bye`\n" +
+          "`;bye`"
+        },
+        { name: "🛡 Moderation",
+          value:
+          "`;purge <amount>`\n" +
+          "`;mute @user 1h`\n" +
+          "`;ban @user`"
+        },
+        { name: "🎫 Tickets",
+          value:
+          "`;ticketpanel add #channel`"
+        }
+      )
+      .setTimestamp();
+
+    return msg.channel.send({ embeds: [embed] });
+  }
+
+  /* ================= CREATE TOURNAMENT ================= */
+  if (cmd === "1v1") {
+    if (!isStaff(msg.member)) return;
+
+    const max = parseInt(args[0]);
+    if (!max) return;
+
+    tournament = {
+      maxPlayers: max,
+      players: [],
+      matches: []
+    };
+
+    const embed = new EmbedBuilder()
+      .setTitle("🏆 1v1 Tournament")
+      .setDescription(`Players: 0/${max}`)
+      .setColor("Green");
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("register")
+        .setLabel("Register (0/" + max + ")")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    const message = await msg.channel.send({
+      embeds: [embed],
+      components: [row]
+    });
+
+    tournament.messageId = message.id;
+  }
+
+  /* ================= QUALIFY ================= */
+  if (cmd === "qual") {
+    if (!isStaff(msg.member)) return;
+    if (!tournament) return;
+
+    if (args[0]?.toLowerCase() === "bye") return;
+
+    const member = msg.mentions.members.first();
+    if (!member) return;
+
+    const winnerEmbed = new EmbedBuilder()
+      .setColor("Gold")
+      .setTitle("🏆 TOURNAMENT WINNER 🏆")
+      .setDescription(`${member} is the Champion!`)
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setTimestamp();
+
+    msg.channel.send({ embeds: [winnerEmbed] });
+
+    tournament = null;
+  }
+
   /* ================= PURGE ================= */
   if (cmd === "purge") {
     if (!isMod(msg.member)) return;
     const amount = parseInt(args[0]);
     if (!amount) return;
     await msg.channel.bulkDelete(amount, true).catch(()=>{});
-    autoDelete(msg);
-  }
-
-  /* ================= MUTE ================= */
-  if (cmd === "mute") {
-    if (!isMod(msg.member)) return;
-
-    const member = msg.mentions.members.first();
-    const time = args[1];
-    if (!member || !time) return;
-
-    let mutedRole = msg.guild.roles.cache.find(r => r.name === "Muted");
-
-    if (!mutedRole) {
-      mutedRole = await msg.guild.roles.create({
-        name: "Muted",
-        permissions: []
-      });
-
-      msg.guild.channels.cache.forEach(channel => {
-        channel.permissionOverwrites.edit(mutedRole, {
-          SendMessages: false,
-          AddReactions: false
-        });
-      });
-    }
-
-    await member.roles.add(mutedRole);
-
-    const duration = parseTime(time);
-    if (!duration) return;
-
-    setTimeout(() => {
-      member.roles.remove(mutedRole).catch(()=>{});
-    }, duration);
-
-    autoDelete(msg);
   }
 
   /* ================= BAN ================= */
   if (cmd === "ban") {
     if (!isMod(msg.member)) return;
-
     const member = msg.mentions.members.first();
     if (!member) return;
-
     await member.ban().catch(()=>{});
-    autoDelete(msg);
-  }
-
-  /* ================= TICKET PANEL ================= */
-  if (cmd === "ticketpanel" && args[0] === "add") {
-    if (!isMod(msg.member)) return;
-
-    const channel = msg.mentions.channels.first();
-    if (!channel) return;
-
-    const embed = new EmbedBuilder()
-      .setTitle("🎫 Support Ticket")
-      .setDescription("Click the button below to create a private ticket.")
-      .setColor("Blue");
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("create_ticket")
-        .setLabel("Create Ticket")
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    channel.send({ embeds: [embed], components: [row] });
-    autoDelete(msg);
-  }
-
-  /* ================= QUAL BYE ================= */
-  if (cmd === "qual" && args[0]?.toLowerCase() === "bye") {
-    if (!isStaff(msg.member)) return;
-    if (!tournament) return;
-
-    const match = tournament.matches.find(
-      m => m.p1.startsWith("BYE") || m.p2.startsWith("BYE")
-    );
-
-    if (!match) return;
-
-    match.winner = match.p1.startsWith("BYE")
-      ? match.p2
-      : match.p1;
-
-    autoDelete(msg);
   }
 });
 
@@ -174,59 +163,36 @@ client.on("messageCreate", async msg => {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
 
-  /* ================= CREATE TICKET ================= */
-  if (interaction.customId === "create_ticket") {
-    const guild = interaction.guild;
-    const modRole = guild.roles.cache.find(r => r.name === MOD_ROLE);
+  if (interaction.customId === "register") {
+    if (!tournament) return;
 
-    const channel = await guild.channels.create({
-      name: `ticket-${interaction.user.username}`,
-      type: ChannelType.GuildText,
-      permissionOverwrites: [
-        {
-          id: guild.roles.everyone,
-          deny: [PermissionsBitField.Flags.ViewChannel]
-        },
-        {
-          id: interaction.user.id,
-          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-        },
-        {
-          id: modRole.id,
-          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-        }
-      ]
-    });
+    if (tournament.players.includes(interaction.user.id))
+      return interaction.reply({ content: "Already registered!", ephemeral: true });
 
-    const closeRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("close_ticket")
-        .setLabel("Close Ticket")
-        .setStyle(ButtonStyle.Danger)
-    );
+    if (tournament.players.length >= tournament.maxPlayers)
+      return interaction.reply({ content: "Tournament full!", ephemeral: true });
 
-    channel.send({
-      content: `Ticket created for ${interaction.user}`,
-      components: [closeRow]
-    });
+    tournament.players.push(interaction.user.id);
 
-    interaction.reply({ content: "Ticket created!", ephemeral: true });
-  }
+    const channel = interaction.channel;
+    const message = await channel.messages.fetch(tournament.messageId);
 
-  /* ================= CLOSE TICKET ================= */
-  if (interaction.customId === "close_ticket") {
-    if (!interaction.member.roles.cache.some(r => r.name === MOD_ROLE)) {
-      return interaction.reply({
-        content: "Only Moderator can close tickets.",
-        ephemeral: true
-      });
-    }
+    const count = tournament.players.length;
 
-    await interaction.reply({ content: "Closing ticket...", ephemeral: true });
+    const embed = EmbedBuilder.from(message.embeds[0])
+      .setDescription(`Players: ${count}/${tournament.maxPlayers}`);
 
-    setTimeout(() => {
-      interaction.channel.delete().catch(()=>{});
-    }, 2000);
+    const button = new ButtonBuilder()
+      .setCustomId("register")
+      .setLabel(`Register (${count}/${tournament.maxPlayers})`)
+      .setStyle(count >= tournament.maxPlayers ? ButtonStyle.Secondary : ButtonStyle.Primary)
+      .setDisabled(count >= tournament.maxPlayers);
+
+    const row = new ActionRowBuilder().addComponents(button);
+
+    await message.edit({ embeds: [embed], components: [row] });
+
+    interaction.reply({ content: "Registered!", ephemeral: true });
   }
 });
 
