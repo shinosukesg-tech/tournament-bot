@@ -44,10 +44,6 @@ let tournament = null;
 const autoDelete = (msg) =>
   setTimeout(() => msg.delete().catch(() => {}), 1500);
 
-const isStaff = (member) =>
-  member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-  member.roles.cache.some(r => r.name === STAFF_ROLE);
-
 const shuffle = (arr) =>
   [...arr].sort(() => Math.random() - 0.5);
 
@@ -91,44 +87,6 @@ function registrationRow() {
   );
 }
 
-function bracketEmbed() {
-  let desc = `🏆 ROUND ${tournament.round}\n\n`;
-
-  tournament.matches.forEach((m, i) => {
-    const p1 = m.p1.startsWith("BYE") ? m.p1 : `<@${m.p1}>`;
-    const p2 = m.p2.startsWith("BYE") ? m.p2 : `<@${m.p2}>`;
-
-    const matchTitle = m.winner
-      ? `Match ${i + 1} ${TICK}`
-      : `Match ${i + 1}`;
-
-    desc += `${matchTitle}
-${p1} ${VS} ${p2}
-${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
-
-`;
-  });
-
-  return new EmbedBuilder()
-    .setColor("#00ff88")
-    .setTitle("📊 LIVE BRACKET")
-    .setImage(BANNER)
-    .setDescription(desc)
-    .setTimestamp();
-}
-
-function controlRow() {
-  const final = tournament.matches.length === 1;
-
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(final ? "announce" : "next")
-      .setLabel(final ? "Winner Announce 🏆" : "Next Round")
-      .setStyle(final ? ButtonStyle.Success : ButtonStyle.Primary)
-      .setDisabled(!allFinished())
-  );
-}
-
 /* ================= COMMANDS ================= */
 
 client.on("messageCreate", async msg => {
@@ -138,13 +96,40 @@ client.on("messageCreate", async msg => {
   const cmd = args.shift().toLowerCase();
   await msg.delete().catch(()=>{});
 
+  if (cmd === "1v1") {
+
+    const size = parseInt(args[0]);
+    const server = args[1];
+    const map = args[2];
+    const name = args.slice(3).join(" ");
+    if (!size || !server || !map || !name) return;
+
+    tournament = {
+      name,
+      maxPlayers: size,
+      server,
+      map,
+      players: [],
+      matches: [],
+      round: 1,
+      panelId: null,
+      bracketId: null
+    };
+
+    const panel = await msg.channel.send({
+      embeds: [registrationEmbed()],
+      components: [registrationRow()]
+    });
+
+    tournament.panelId = panel.id;
+  }
+
   if (cmd === "qual") {
 
     if (!tournament) return;
 
     const input = args[0];
 
-    // ✅ BYE SUPPORT ADDED HERE
     if (input && input.toLowerCase().startsWith("bye")) {
 
       const match = tournament.matches.find(
@@ -157,8 +142,7 @@ client.on("messageCreate", async msg => {
 
       const bracketMsg = await msg.channel.messages.fetch(tournament.bracketId);
       await bracketMsg.edit({
-        embeds: [bracketEmbed()],
-        components: [controlRow()]
+        embeds: [bracketEmbed()]
       });
 
       return;
@@ -176,12 +160,52 @@ client.on("messageCreate", async msg => {
 
     const bracketMsg = await msg.channel.messages.fetch(tournament.bracketId);
     await bracketMsg.edit({
-      embeds: [bracketEmbed()],
-      components: [controlRow()]
+      embeds: [bracketEmbed()]
     });
   }
+});
 
-  /* ===== REST OF YOUR ORIGINAL CODE BELOW (UNCHANGED) ===== */
+/* ================= BUTTON FIX (IMPORTANT) ================= */
+
+client.on("interactionCreate", async interaction => {
+
+  if (!interaction.isButton()) return;
+  if (!tournament) return interaction.reply({ content: "No tournament.", ephemeral: true });
+
+  /* REGISTER */
+  if (interaction.customId === "register") {
+
+    if (!tournament.players.includes(interaction.user.id) &&
+        tournament.players.length < tournament.maxPlayers) {
+
+      tournament.players.push(interaction.user.id);
+
+      const panel = await interaction.channel.messages.fetch(tournament.panelId);
+      await panel.edit({
+        embeds: [registrationEmbed()],
+        components: [registrationRow()]
+      });
+    }
+
+    return interaction.deferUpdate();
+  }
+
+  /* UNREGISTER FIXED */
+  if (interaction.customId === "unregister") {
+
+    tournament.players = tournament.players.filter(
+      p => p !== interaction.user.id
+    );
+
+    const panel = await interaction.channel.messages.fetch(tournament.panelId);
+    await panel.edit({
+      embeds: [registrationEmbed()],
+      components: [registrationRow()]
+    });
+
+    return interaction.deferUpdate();
+  }
+
 });
 
 client.login(process.env.TOKEN);
