@@ -1,403 +1,461 @@
 require("dotenv").config();
 
 /* ================= UPTIME ================= */
-
 const express = require("express");
 const app = express();
-
-app.get("/", (req,res)=>res.send("Bot Alive"));
+app.get("/", (req, res) => res.send("Alive"));
 app.listen(process.env.PORT || 3000);
-
 /* ========================================== */
 
 const {
-Client,
-GatewayIntentBits,
-EmbedBuilder,
-ActionRowBuilder,
-ButtonBuilder,
-ButtonStyle,
-PermissionsBitField,
-ChannelType
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  PermissionsBitField,
+  ChannelType
 } = require("discord.js");
 
-const { get, add } = require("./gems");
+const PREFIX = ";";
+const STAFF_ROLE = "Tournament Hoster";
+const MOD_ROLE = "Moderator";
+const DEFAULT_NAME = "ShinTours Tournament";
+
+const BANNER = "https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png";
+
+const TICK = "<:TICK:1467892699578236998>";
+const VS = "<:VS:1477014161484677150>";
+
+/* ===== Ticket Panel Images ===== */
+
+const TICKET_IMAGES = [
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png",
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png",
+"https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png",
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
+];
+
+const randomTicketImage = () =>
+TICKET_IMAGES[Math.floor(Math.random()*TICKET_IMAGES.length)];
 
 const client = new Client({
-intents:[
-GatewayIntentBits.Guilds,
-GatewayIntentBits.GuildMessages,
-GatewayIntentBits.MessageContent,
-GatewayIntentBits.GuildMembers
-]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: ["CHANNEL"]
 });
 
-const PREFIX = ";";
-const MOD_ROLE = "Moderator";
-const OWNER_ID = "947183912097026108";
+let tournament = null;
 
-let welcomeChannel = null;
-let purchaseHistory = [];
+/* ================= UTIL ================= */
 
-/* ================= TOURNAMENT ================= */
+const autoDelete = (msg) =>
+  setTimeout(() => msg.delete().catch(() => {}), 2000);
 
-let tournament = {
-active:false,
-size:0,
-server:"",
-map:"",
-name:"",
-round:1,
-players:[],
-qualified:[]
-};
+const isStaff = (member) =>
+  member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+  member.roles.cache.some(r => r.name === STAFF_ROLE);
 
-/* ================= READY ================= */
+const shuffle = (arr) =>
+  [...arr].sort(() => Math.random() - 0.5);
 
-client.once("ready",()=>{
-console.log(`Logged in as ${client.user.tag}`);
-});
+const allFinished = () =>
+  tournament && tournament.matches.every(m => m.winner);
+
+/* ================= EMBEDS ================= */
+
+function registrationEmbed() {
+  return new EmbedBuilder()
+    .setColor("#ff003c")
+    .setTitle(`🏆 ${tournament.name}`)
+    .setImage(BANNER)
+    .setDescription(`
+🎮 Mode: **1v1**
+🌍 Server: **${tournament.server}**
+🗺 Map: **${tournament.map}**
+👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
+🔓 Status: **OPEN**
+`)
+    .setTimestamp();
+}
+
+function registrationRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("register")
+      .setLabel("Register")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId("unregister")
+      .setLabel("Unregister")
+      .setStyle(ButtonStyle.Danger),
+
+    new ButtonBuilder()
+      .setCustomId("count")
+      .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true)
+  );
+}
+
+function bracketEmbed() {
+
+  let desc = `🏆 ROUND ${tournament.round}\n\n`;
+
+  tournament.matches.forEach((m, i) => {
+
+    const p1 = m.p1.startsWith("BYE") ? m.p1 : `<@${m.p1}>`;
+    const p2 = m.p2.startsWith("BYE") ? m.p2 : `<@${m.p2}>`;
+
+    const title = m.winner ? `Match ${i + 1} ${TICK}` : `Match ${i + 1}`;
+
+    desc += `${title}
+${p1} ${VS} ${p2}
+${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
+
+`;
+
+  });
+
+  return new EmbedBuilder()
+    .setColor("#00ff88")
+    .setTitle("📊 LIVE BRACKET")
+    .setImage(BANNER)
+    .setDescription(desc)
+    .setTimestamp();
+}
+
+function controlRow() {
+
+  const final = tournament.matches.length === 1;
+
+  return new ActionRowBuilder().addComponents(
+
+    new ButtonBuilder()
+      .setCustomId(final ? "announce" : "next")
+      .setLabel(final ? "Announce Winner 🏆" : "Next Round")
+      .setStyle(final ? ButtonStyle.Success : ButtonStyle.Primary)
+      .setDisabled(!allFinished())
+
+  );
+}
 
 /* ================= COMMANDS ================= */
 
-client.on("messageCreate", async msg=>{
+client.on("messageCreate", async msg => {
 
-if(msg.author.bot) return;
-if(!msg.content.startsWith(PREFIX)) return;
+  if (msg.author.bot || !msg.content.startsWith(PREFIX)) return;
 
-const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
-const cmd = args.shift().toLowerCase();
+  const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
+  const cmd = args.shift().toLowerCase();
 
-/* ===== HELP ===== */
+  if (msg.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    await msg.delete().catch(()=>{});
+  }
 
-if(cmd==="help"){
+  if (cmd === "ticketpanel" && args[0] === "add") {
 
-const embed = new EmbedBuilder()
-.setColor("#5865F2")
-.setTitle("🤖 Bot Commands")
-.setDescription(`
-💎 ;gems
-🛒 ;shop
-🎟 ;ticketpanel
-⚔ ;1v1
-💰 ;owo
-🧾 ;history
-`);
+    if (!isStaff(msg.member)) return;
 
-msg.channel.send({embeds:[embed]});
+    const embed = new EmbedBuilder()
+      .setColor("#2b2d31")
+      .setTitle("🎫 ShinTours Support Center")
+      .setDescription(`
+Need help or want to apply for staff?
 
-}
+Click the button below to open a **private ticket**.
 
-/* ===== GEMS ===== */
+📌 Our team will assist you shortly.
+`)
+      .setImage(randomTicketImage())
+      .setFooter({ text:"ShinTours Tournament Support" });
 
-if(cmd==="gems"){
+    const row = new ActionRowBuilder().addComponents(
 
-if(msg.author.id===OWNER_ID)
-return msg.reply("💎 Balance: **∞ <:NoobGems:1479770351473787023>**");
+      new ButtonBuilder()
+        .setCustomId("create_ticket")
+        .setLabel("Create Ticket")
+        .setEmoji("🎟️")
+        .setStyle(ButtonStyle.Primary)
 
-const balance = get(msg.author.id)||0;
+    );
 
-msg.reply(`💎 Balance: **${balance} <:NoobGems:1479770351473787023>**`);
+    await msg.channel.send({ embeds:[embed], components:[row] });
+    return;
+  }
 
-}
+  if (cmd === "del") {
+    tournament = null;
+    const m = await msg.channel.send("Tournament deleted.");
+    return autoDelete(m);
+  }
 
-/* ===== SHOP ===== */
+  /* ===== TOURNAMENT CREATE ===== */
 
-if(cmd==="shop"){
+  if (cmd === "1v1") {
 
-const balance = get(msg.author.id)||0;
+    if (!isStaff(msg.member)) return;
 
-const embed = new EmbedBuilder()
-.setColor("#00ffff")
-.setTitle("🛒 KmGems Shop")
-.setDescription(`
-Balance: **${balance} <:NoobGems:1479770351473787023>**
+    const size = parseInt(args[0]);
+    const server = args[1];
+    const map = args[2];
+    const name = args.slice(3).join(" ") || DEFAULT_NAME;
 
-VIP Role — 500
-Name Color — 200
-Server Shoutout — 100
-`);
+    if (!size || !server || !map) return;
 
-msg.channel.send({embeds:[embed]});
+    tournament = {
+      name,
+      maxPlayers: size,
+      server,
+      map,
+      players: [],
+      matches: [],
+      round: 1,
+      panelId: null,
+      bracketId: null,
+      byeCount: 1
+    };
 
-}
+    const panel = await msg.channel.send({
+      embeds:[registrationEmbed()],
+      components:[registrationRow()]
+    });
 
-/* ===== BUY ===== */
+    tournament.panelId = panel.id;
+  }
 
-if(cmd==="buy"){
+  if (!tournament) return;
 
-const item=args[0];
+  /* ===== START ===== */
 
-let price=0;
+  if (cmd === "start") {
 
-if(item==="vip") price=500;
-if(item==="color") price=200;
-if(item==="shoutout") price=100;
+    if (tournament.players.length < 2) return;
 
-if(price===0) return msg.reply("Item not found");
+    tournament.matches = [];
+    const shuffled = shuffle(tournament.players);
 
-const balance=get(msg.author.id)||0;
+    if (shuffled.length % 2 !== 0) shuffled.push(`BYE${tournament.byeCount++}`);
 
-if(balance<price)
-return msg.reply("Not enough KmGems");
+    for (let i=0;i<shuffled.length;i+=2){
 
-add(msg.author.id,-price);
+      tournament.matches.push({
+        p1: shuffled[i],
+        p2: shuffled[i+1],
+        winner: null
+      });
 
-purchaseHistory.push({
-user:msg.author.tag,
-item:item,
-price:price
+    }
+
+    const bracket = await msg.channel.send({
+      embeds:[bracketEmbed()],
+      components:[controlRow()]
+    });
+
+    tournament.bracketId = bracket.id;
+
+  }
+
+  /* ===== ADD BYE ===== */
+
+  if(cmd === "bye"){
+
+    if(!isStaff(msg.member)) return;
+
+    const bye = `BYE${tournament.byeCount++}`;
+    tournament.players.push(bye);
+
+    const m = await msg.channel.send(`Added **${bye}**`);
+    autoDelete(m);
+
+  }
+
+  /* ===== QUAL ===== */
+
+  if(cmd === "qual"){
+
+    const input = args[0];
+
+    if(!input) return;
+
+    let match;
+
+    if(input.toLowerCase().startsWith("bye")){
+
+      match = tournament.matches.find(
+        m => m.p1 === input.toUpperCase() || m.p2 === input.toUpperCase()
+      );
+
+      if(!match) return;
+
+      match.winner = input.toUpperCase();
+
+    }else{
+
+      const user = msg.mentions.users.first();
+      if(!user) return;
+
+      match = tournament.matches.find(
+        m => m.p1 === user.id || m.p2 === user.id
+      );
+
+      if(!match) return;
+
+      match.winner = user.id;
+
+    }
+
+    const bracketMsg = await msg.channel.messages.fetch(tournament.bracketId);
+
+    await bracketMsg.edit({
+      embeds:[bracketEmbed()],
+      components:[controlRow()]
+    });
+
+  }
+
 });
 
-msg.channel.send(`✅ Purchased **${item}**`);
+/* ================= BUTTONS ================= */
 
+client.on("interactionCreate", async i => {
+
+if(!i.isButton()) return;
+
+if(i.customId === "create_ticket"){
+
+const channel = await i.guild.channels.create({
+name:`ticket-${i.user.username}`,
+type:ChannelType.GuildText,
+permissionOverwrites:[
+{ id:i.guild.id, deny:[PermissionsBitField.Flags.ViewChannel]},
+{ id:i.user.id, allow:[PermissionsBitField.Flags.ViewChannel]},
+{
+id:i.guild.roles.cache.find(r=>r.name===MOD_ROLE)?.id,
+allow:[PermissionsBitField.Flags.ViewChannel]
 }
+]
+});
 
-/* ===== GIVE ===== */
-
-if(cmd==="give"){
-
-if(!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
-return msg.reply("Admin only");
-
-const amount=parseInt(args[0]);
-const user=msg.mentions.users.first();
-
-if(!amount||!user)
-return msg.reply("Use ;give amount @user");
-
-add(user.id,amount);
-
-msg.channel.send(`${user} received **${amount} <:NoobGems:1479770351473787023>**`);
-
-}
-
-/* ===== HISTORY ===== */
-
-if(cmd==="history"){
-
-if(!msg.member.roles.cache.some(r=>r.name===MOD_ROLE))
-return msg.reply("Moderator only");
-
-let text=purchaseHistory
-.slice(-10)
-.map(h=>`${h.user} bought ${h.item} (${h.price})`)
-.join("\n");
-
-const embed=new EmbedBuilder()
-.setColor("Orange")
-.setTitle("🧾 Purchase History")
-.setDescription(text||"No purchases");
-
-msg.channel.send({embeds:[embed]});
-
-}
-
-/* ===== OWO ===== */
-
-if(cmd==="owo"){
-
-const embed=new EmbedBuilder()
-.setColor("#2f3136")
-.setTitle("💰 OWO → KmGems")
-.setDescription(`
-1k OWO = 500 <:NoobGems:1479770351473787023>
-10k OWO = 5000 <:NoobGems:1479770351473787023>
-20k OWO = 10000 <:NoobGems:1479770351473787023>
-30k OWO = 15000 <:NoobGems:1479770351473787023>
-40k OWO = 20000 <:NoobGems:1479770351473787023>
-50k OWO = 25000 <:NoobGems:1479770351473787023>
-`);
-
-msg.channel.send({embeds:[embed]});
-
-}
-
-/* ===== TICKET PANEL ===== */
-
-if(cmd==="ticketpanel"){
-
-const embed=new EmbedBuilder()
-.setColor("#5865F2")
-.setTitle("🎟 Ticket System")
-.setDescription(`
-🛡 Support → Need help
-📋 Apply → Become staff
-🎁 Reward → Claim reward
-💰 Purchase → Buy KmGems
-`)
-.setImage("https://i.imgur.com/2s7X6kT.png");
-
-const row=new ActionRowBuilder().addComponents(
+const row = new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
-.setCustomId("ticket_support")
-.setLabel("Support")
-.setStyle(ButtonStyle.Danger),
-
-new ButtonBuilder()
-.setCustomId("ticket_apply")
-.setLabel("Apply")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("ticket_reward")
-.setLabel("Reward")
-.setStyle(ButtonStyle.Primary),
-
-new ButtonBuilder()
-.setCustomId("purchase_panel")
-.setLabel("Purchase")
-.setStyle(ButtonStyle.Secondary)
+.setCustomId("close_ticket")
+.setLabel("Close Ticket")
+.setStyle(ButtonStyle.Danger)
 
 );
 
-msg.channel.send({embeds:[embed],components:[row]});
-
-}
-
-/* ================= TOURNAMENT ================= */
-
-/* ===== CREATE ===== */
-
-if(cmd==="1v1"){
-
-const size=args[0];
-const server=args[1];
-const map=args[2];
-const name=args.slice(3).join(" ")||"1v1 Tournament";
-
-tournament.active=true;
-tournament.size=size;
-tournament.server=server;
-tournament.map=map;
-tournament.name=name;
-tournament.round=1;
-tournament.players=[];
-tournament.qualified=[];
-
-msg.channel.send(`⚔ **${name} Created**`);
-
-}
-
-/* ===== BYE ===== */
-
-if(cmd==="bye"){
-
-tournament.players.push("bye1");
-
-msg.channel.send("✅ Bye slot added");
-
-}
-
-/* ===== START ===== */
-
-if(cmd==="start"){
-
-const embed=new EmbedBuilder()
-.setColor("Green")
-.setTitle(`Round ${tournament.round}`)
-.setDescription(`Map: ${tournament.map}`);
-
-msg.channel.send({embeds:[embed]});
-
-}
-
-/* ===== QUAL ===== */
-
-if(cmd==="qual"){
-
-const player=args[0];
-
-tournament.qualified.push(player);
-
-msg.channel.send(`✅ Qualified: ${player}`);
-
-}
-
-/* ===== ROOM CODE ===== */
-
-if(cmd==="code"){
-
-const room=args[0];
-const user=msg.mentions.users.first();
-
-const embed=new EmbedBuilder()
-.setColor("Blue")
-.setTitle("🎮 Room Code")
-.setDescription(`
-Code: **${room}**
-Player: ${user}
-`);
-
-msg.channel.send({embeds:[embed]});
-
-}
-
-/* ===== DELETE ===== */
-
-if(cmd==="del"){
-
-tournament.active=false;
-tournament.players=[];
-tournament.qualified=[];
-tournament.round=1;
-
-msg.channel.send("❌ Tournament deleted");
-
-}
-
+channel.send({
+content:`Ticket created by <@${i.user.id}>`,
+components:[row]
 });
 
-/* ================= BUTTON SYSTEM ================= */
-
-client.on("interactionCreate",async interaction=>{
-
-if(!interaction.isButton()) return;
-
-/* PURCHASE */
-
-if(interaction.customId==="purchase_panel"){
-
-const embed=new EmbedBuilder()
-.setColor("Gold")
-.setTitle("💰 OWO Purchase")
-.setDescription(`
-1k OWO = 500 <:NoobGems:1479770351473787023>
-10k OWO = 5000 <:NoobGems:1479770351473787023>
-20k OWO = 10000 <:NoobGems:1479770351473787023>
-30k OWO = 15000 <:NoobGems:1479770351473787023>
-40k OWO = 20000 <:NoobGems:1479770351473787023>
-50k OWO = 25000 <:NoobGems:1479770351473787023>
-`);
-
-interaction.reply({embeds:[embed],ephemeral:true});
+return i.reply({content:"Ticket created!",ephemeral:true});
 
 }
 
-/* NEXT ROUND */
+if(i.customId === "close_ticket"){
 
-if(interaction.customId==="next_round"){
+if(!isStaff(i.member)) return;
+
+await i.reply({content:"Closing ticket...",ephemeral:true});
+
+setTimeout(()=>i.channel.delete().catch(()=>{}),1500);
+
+}
+
+if(!tournament) return;
+
+if(i.customId === "register"){
+
+if(!tournament.players.includes(i.user.id) &&
+tournament.players.length < tournament.maxPlayers){
+
+tournament.players.push(i.user.id);
+
+}
+
+const panel = await i.channel.messages.fetch(tournament.panelId);
+
+await panel.edit({
+embeds:[registrationEmbed()],
+components:[registrationRow()]
+});
+
+await i.deferUpdate();
+
+}
+
+if(i.customId === "unregister"){
+
+tournament.players =
+tournament.players.filter(p=>p !== i.user.id);
+
+const panel = await i.channel.messages.fetch(tournament.panelId);
+
+await panel.edit({
+embeds:[registrationEmbed()],
+components:[registrationRow()]
+});
+
+await i.deferUpdate();
+
+}
+
+if(i.customId === "next"){
+
+const winners = tournament.matches.map(m=>m.winner);
 
 tournament.round++;
 
-interaction.reply(`⚔ Round ${tournament.round} started`);
+tournament.matches=[];
+
+for(let i=0;i<winners.length;i+=2){
+
+tournament.matches.push({
+p1:winners[i],
+p2:winners[i+1],
+winner:null
+});
 
 }
 
-/* WINNER */
+const bracket = await i.channel.messages.fetch(tournament.bracketId);
 
-if(interaction.customId==="announce_winner"){
+await bracket.edit({
+embeds:[bracketEmbed()],
+components:[controlRow()]
+});
 
-const winner=interaction.user;
+await i.deferUpdate();
 
-const embed=new EmbedBuilder()
-.setColor("#FFD700")
-.setTitle("🏆 Tournament Winner")
-.setThumbnail(winner.displayAvatarURL({size:512}))
-.setDescription(`Congratulations ${winner}`);
+}
 
-interaction.reply({embeds:[embed]});
+if(i.customId === "announce"){
+
+const winnerId = tournament.matches[0].winner;
+if(!winnerId) return;
+
+const user = await client.users.fetch(winnerId);
+
+const embed = new EmbedBuilder()
+.setColor("#ffd700")
+.setTitle("🏆 TOURNAMENT WINNER 🏆")
+.setThumbnail(user.displayAvatarURL({dynamic:true}))
+.setDescription(`Congratulations <@${winnerId}>!`)
+.setImage(BANNER);
+
+await i.channel.send({embeds:[embed]});
+
+tournament = null;
 
 }
 
