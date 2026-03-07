@@ -4,7 +4,7 @@ require("dotenv").config();
 
 const express = require("express");
 const app = express();
-app.get("/", (req,res)=>res.send("Alive"));
+app.get("/", (req,res)=>res.send("Bot Online"));
 app.listen(process.env.PORT || 3000);
 
 /* ================= DISCORD ================= */
@@ -23,6 +23,20 @@ ChannelType
 const PREFIX = ";";
 const STAFF_ROLE = "Tournament Hoster";
 
+/* ================= BANNERS ================= */
+
+const BANNERS = [
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png",
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png",
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
+];
+
+function banner(){
+return BANNERS[Math.floor(Math.random()*BANNERS.length)];
+}
+
+/* ================= CLIENT ================= */
+
 const client = new Client({
 intents:[
 GatewayIntentBits.Guilds,
@@ -31,8 +45,6 @@ GatewayIntentBits.GuildMembers,
 GatewayIntentBits.MessageContent
 ]
 });
-
-/* ================= VARIABLES ================= */
 
 let welcomeChannel = null;
 let tournament = null;
@@ -68,7 +80,7 @@ if(!msg.content.startsWith(PREFIX)) return;
 const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
 const cmd = args.shift().toLowerCase();
 
-/* ================= WELCOME SET ================= */
+/* ================= SET WELCOME ================= */
 
 if(cmd==="welcome"){
 
@@ -76,7 +88,7 @@ if(!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
 
 welcomeChannel = msg.channel.id;
 
-msg.channel.send("✅ Welcome channel set.");
+msg.channel.send("✅ Welcome channel set");
 
 }
 
@@ -91,12 +103,12 @@ const embed = new EmbedBuilder()
 .setTitle("🎟 Ticket System")
 
 .setDescription(`
-🛡 **Support** → Need help
-📋 **Apply** → Staff application
-🎁 **Reward** → Claim reward
+🛡 **Support** → Need help  
+📋 **Apply** → Apply for staff  
+🎁 **Reward** → Claim rewards
 `)
 
-.setImage("https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png");
+.setImage(banner());
 
 const row = new ActionRowBuilder().addComponents(
 
@@ -132,7 +144,7 @@ const server = args[1];
 const map = args[2];
 const name = args.slice(3).join(" ") || "Tournament";
 
-if(!size || !server || !map) return msg.reply("Usage: ;1v1 size server map name");
+if(!size || !server || !map) return;
 
 tournament = {
 
@@ -158,7 +170,9 @@ const embed = new EmbedBuilder()
 🗺 Map: **${map}**
 👥 Players: **0/${size}**
 Status: **OPEN**
-`);
+`)
+
+.setImage(banner());
 
 const row = new ActionRowBuilder().addComponents(
 
@@ -174,19 +188,20 @@ new ButtonBuilder()
 
 );
 
-const panel = await msg.channel.send({embeds:[embed],components:[row]});
-
-tournament.panel = panel;
+tournament.panel = await msg.channel.send({
+embeds:[embed],
+components:[row]
+});
 
 }
 
-/* ================= START ================= */
+/* ================= START TOURNAMENT ================= */
 
 if(cmd==="start"){
 
 if(!tournament) return;
 
-if(tournament.players.length<2)
+if(tournament.players.length < 2)
 return msg.reply("Not enough players");
 
 const shuffled = shuffle(tournament.players);
@@ -209,7 +224,7 @@ sendBracket(msg.channel);
 
 }
 
-/* ================= QUAL ================= */
+/* ================= QUALIFY ================= */
 
 if(cmd==="qual"){
 
@@ -255,21 +270,21 @@ if(!isStaff(msg.member)) return;
 const room = args[0];
 const user = msg.mentions.users.first();
 
-if(!room || !user) return msg.reply("Usage: ;code ROOMCODE @player");
+if(!room || !user) return;
 
 const embed = new EmbedBuilder()
+
+.setColor("Green")
 
 .setTitle("🎮 Match Room Code")
 
 .setDescription(`
-Your match room code is:
+Room Code: **${room}**
 
-**${room}**
-
-Good luck! 🍀
+Good luck!
 `)
 
-.setColor("Green");
+.setImage(banner());
 
 user.send({embeds:[embed]});
 
@@ -300,11 +315,13 @@ ${m.winner ? "✔ Complete":"⏳ Pending"}
 
 const embed = new EmbedBuilder()
 
+.setColor("Green")
+
 .setTitle("📊 Tournament Bracket")
 
 .setDescription(text)
 
-.setColor("Green");
+.setImage(banner());
 
 const row = new ActionRowBuilder().addComponents(
 
@@ -329,8 +346,6 @@ if(!interaction.isButton()) return;
 
 if(interaction.customId==="register"){
 
-if(!tournament) return;
-
 if(tournament.players.includes(interaction.user.id))
 return interaction.reply({content:"Already registered",ephemeral:true});
 
@@ -347,9 +362,9 @@ interaction.reply({content:"Registered",ephemeral:true});
 
 if(interaction.customId==="unregister"){
 
-if(!tournament) return;
-
-tournament.players = tournament.players.filter(id=>id!==interaction.user.id);
+tournament.players = tournament.players.filter(
+id=>id!==interaction.user.id
+);
 
 interaction.reply({content:"Unregistered",ephemeral:true});
 
@@ -370,13 +385,15 @@ const user = await client.users.fetch(winners[0]);
 
 const embed = new EmbedBuilder()
 
+.setColor("Gold")
+
 .setTitle("🏆 TOURNAMENT WINNER")
 
 .setDescription(`${user}`)
 
 .setThumbnail(user.displayAvatarURL())
 
-.setColor("Gold");
+.setImage(banner());
 
 interaction.channel.send({embeds:[embed]});
 
@@ -405,7 +422,7 @@ sendBracket(interaction.channel);
 
 }
 
-/* ================= TICKETS ================= */
+/* ================= TICKET BUTTONS ================= */
 
 if(interaction.customId.startsWith("ticket_")){
 
@@ -459,10 +476,6 @@ if(!welcomeChannel) return;
 const channel = member.guild.channels.cache.get(welcomeChannel);
 if(!channel) return;
 
-const ageDays = Math.floor(
-(Date.now()-member.user.createdTimestamp)/86400000
-);
-
 const embed = new EmbedBuilder()
 
 .setColor("#8e44ad")
@@ -476,19 +489,11 @@ iconURL:member.user.displayAvatarURL()
 
 .setDescription(`
 Welcome **${member.user.username}**
-to 🏆 **${member.guild.name}**
+to **${member.guild.name}**
 Have fun here!
 `)
 
-.addFields(
-
-{name:"🆔 User ID",value:member.id},
-
-{name:"⏳ Account Age",value:`${ageDays} days`},
-
-{name:"🎭 Display Name",value:member.displayName}
-
-)
+.setImage(banner())
 
 .setFooter({text:`${member.guild.memberCount} members`})
 
