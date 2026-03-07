@@ -22,7 +22,12 @@ PermissionsBitField
 const PREFIX=";"
 const SERVER_NAME="ShinosukeSG"
 const STAFF_ROLE="Tournament Hoster"
-const BANNER="https://i.imgur.com/8Km9tLL.png"
+const TOUR_IMAGES=[
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png",
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png",
+"https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png",
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
+]
 
 const client=new Client({
 intents:[
@@ -437,3 +442,4 @@ console.log(`Logged in as ${client.user.tag}`)
 })
 
 client.login(process.env.TOKEN)
+
