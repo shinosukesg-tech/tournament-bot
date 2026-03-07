@@ -11,20 +11,23 @@ app.listen(process.env.PORT || 3000);
 
 /* ================= DISCORD ================= */
 
-const { 
-Client, 
-GatewayIntentBits, 
-EmbedBuilder, 
-AttachmentBuilder 
+const {
+Client,
+GatewayIntentBits,
+EmbedBuilder,
+ActionRowBuilder,
+ButtonBuilder,
+ButtonStyle
 } = require("discord.js");
 
 const client = new Client({
 intents:[
 GatewayIntentBits.Guilds,
-GatewayIntentBits.GuildMembers,
 GatewayIntentBits.GuildMessages,
+GatewayIntentBits.GuildMembers,
 GatewayIntentBits.MessageContent
-]});
+]
+});
 
 const prefix = "!";
 
@@ -491,4 +494,5 @@ await tournament.registerMessage.edit({components:[row]});
 /* ================= LOGIN ================= */
 
 client.login(process.env.TOKEN);
+
 
