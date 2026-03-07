@@ -8,268 +8,265 @@ app.listen(process.env.PORT || 3000);
 /* ========================================== */
 
 const {
-  Client,
-  GatewayIntentBits,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  PermissionsBitField,
-  ChannelType
+Client,
+GatewayIntentBits,
+EmbedBuilder,
+ActionRowBuilder,
+ButtonBuilder,
+ButtonStyle
 } = require("discord.js");
 
-const gems = require("./gems.js");
+const fs = require("fs");
+const { get, add } = require("./gems");
 
 const PREFIX = ";";
-const STAFF_ROLE = "Tournament Hoster";
-const MOD_ROLE = "Moderator";
-const DEFAULT_NAME = "ShinTours Tournament";
-
-const BANNERS = [
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png",
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png",
-"https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png",
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
-];
-
-function banner(){
-return BANNERS[Math.floor(Math.random()*BANNERS.length)];
-}
-
-const TICK = "<:TICK:1467892699578236998>";
-const VS = "<:VS:1477014161484677150>";
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: ["CHANNEL"]
+intents:[
+GatewayIntentBits.Guilds,
+GatewayIntentBits.GuildMessages,
+GatewayIntentBits.MessageContent
+]
 });
 
-let tournament = null;
-let welcomeChannel = null;
+/* ================= HISTORY ================= */
 
-/* ================= UTIL ================= */
+let history = {};
 
-const autoDelete = (msg) =>
-  setTimeout(() => msg.delete().catch(() => {}), 2000);
-
-const isStaff = (member) =>
-  member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-  member.roles.cache.some(r => r.name === STAFF_ROLE);
-
-const shuffle = (arr) =>
-  [...arr].sort(() => Math.random() - 0.5);
-
-const allFinished = () =>
-  tournament && tournament.matches.every(m => m.winner);
-
-/* ================= EMBEDS ================= */
-
-function registrationEmbed() {
-  return new EmbedBuilder()
-    .setColor("#ff003c")
-    .setTitle(`🏆 ${tournament.name}`)
-    .setImage(banner())
-    .setDescription(`
-🎮 Mode: **1v1**
-🌍 Server: **${tournament.server}**
-🗺 Map: **${tournament.map}**
-👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
-🔓 Status: **OPEN**
-`)
-    .setTimestamp();
+if(fs.existsSync("./history.json")){
+history = JSON.parse(fs.readFileSync("./history.json"));
 }
 
-function registrationRow() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("register")
-      .setLabel("Register")
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId("unregister")
-      .setLabel("Unregister")
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId("count")
-      .setLabel(`👤 ${tournament.players.length}/${tournament.maxPlayers}`)
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(true)
-  );
+function saveHistory(){
+fs.writeFileSync("./history.json",JSON.stringify(history,null,2));
 }
 
-function bracketEmbed() {
-  let desc = `🏆 ROUND ${tournament.round}\n\n`;
+/* ================= READY ================= */
 
-  tournament.matches.forEach((m, i) => {
-
-    const p1 = m.p1.startsWith("BYE") ? m.p1 : `<@${m.p1}>`;
-    const p2 = m.p2.startsWith("BYE") ? m.p2 : `<@${m.p2}>`;
-
-    const title = m.winner ? `Match ${i + 1} ${TICK}` : `Match ${i + 1}`;
-
-    desc += `${title}
-${p1} ${VS} ${p2}
-${m.winner ? "✔ COMPLETE" : "⏳ Pending"}
-
-`;
-  });
-
-  return new EmbedBuilder()
-    .setColor("#00ff88")
-    .setTitle("📊 LIVE BRACKET")
-    .setImage(banner())
-    .setDescription(desc)
-    .setTimestamp();
-}
-
-function controlRow() {
-  const final = tournament.matches.length === 1;
-
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(final ? "announce" : "next")
-      .setLabel(final ? "Announce Winner 🏆" : "Next Round")
-      .setStyle(final ? ButtonStyle.Success : ButtonStyle.Primary)
-      .setDisabled(!allFinished())
-  );
-}
+client.once("ready",()=>{
+console.log(`Logged in as ${client.user.tag}`);
+});
 
 /* ================= COMMANDS ================= */
 
-client.on("messageCreate", async msg => {
+client.on("messageCreate", async msg=>{
 
-  if (msg.author.bot || !msg.content.startsWith(PREFIX)) return;
+if(msg.author.bot) return;
+if(!msg.content.startsWith(PREFIX)) return;
 
-  const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
+const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
+const cmd = args.shift().toLowerCase();
 
-  if (msg.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-    await msg.delete().catch(()=>{});
-  }
+/* ================= SHOP ================= */
 
-  if(cmd==="welcome"){
+if(cmd==="shop"){
 
-  if(!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
-
-  welcomeChannel = msg.channel.id;
-
-  msg.channel.send("✅ Welcome system set in this channel");
-
-  }
-
-  if (cmd === "help") {
-    const m = await msg.channel.send(`
-**Tournament Commands**
-;1v1 size server map (name optional)
-;start
-;qual @player / bye1
-;code ROOMCODE @player
-;ticketpanel add
-;del
-`);
-    return autoDelete(m);
-  }
-
-  if (cmd === "ticketpanel" && args[0] === "add") {
-    if (!isStaff(msg.member)) return;
-
-    const embed = new EmbedBuilder()
-      .setColor("Blue")
-      .setTitle("🎫 Support & Staff Application")
-      .setDescription("For Staff Application and support, Create a ticket with the button below");
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("create_ticket")
-        .setLabel("Create Ticket")
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    await msg.channel.send({ embeds: [embed], components: [row] });
-    return;
-  }
-
-  if (cmd === "del") {
-    tournament = null;
-    const m = await msg.channel.send("Tournament deleted.");
-    return autoDelete(m);
-  }
-
-  if (cmd === "1v1") {
-
-    if (!isStaff(msg.member)) return;
-
-    const size = parseInt(args[0]);
-    const server = args[1];
-    const map = args[2];
-    const name = args.slice(3).join(" ") || DEFAULT_NAME;
-
-    if (!size || !server || !map) return;
-
-    tournament = {
-      name,
-      maxPlayers: size,
-      server,
-      map,
-      players: [],
-      matches: [],
-      round: 1,
-      panelId: null,
-      bracketId: null
-    };
-
-    const panel = await msg.channel.send({
-      embeds: [registrationEmbed()],
-      components: [registrationRow()]
-    });
-
-    tournament.panelId = panel.id;
-  }
-
-});
-
-/* ================= WELCOME EVENT ================= */
-
-client.on("guildMemberAdd", member=>{
-
-if(!welcomeChannel) return;
-
-const channel = member.guild.channels.cache.get(welcomeChannel);
-if(!channel) return;
-
-const created = `<t:${Math.floor(member.user.createdTimestamp/1000)}:R>`;
+const balance = get(msg.author.id);
 
 const embed = new EmbedBuilder()
-.setColor("#8e44ad")
-.setAuthor({name:`Welcome ${member.user.username} 👋`,iconURL:member.user.displayAvatarURL({dynamic:true})})
-.setThumbnail(member.user.displayAvatarURL({size:512}))
+.setColor("#00ffff")
+.setTitle("🛒 KmGems Shop")
 .setDescription(`
-Welcome **${member.user.username}**
-to 🏆 • Ultimate Tournaments! 🎉
+💎 Balance: **${balance} KmGems**
 
-🆔 User ID
-${member.id}
+Rewards
 
-📅 Account Created
-${created}
+1k owo  = 500 KmGems
+5k owo  = 2500 KmGems
+10k owo = 5000 KmGems
+20k owo = 10000 KmGems
+30k owo = 15000 KmGems
+40k owo = 20000 KmGems
+50k owo = 25000 KmGems
 
-🎭 Display Name
-${member.displayName}
-`)
-.setImage(banner())
-.setFooter({text:`${member.guild.memberCount} members`})
-.setTimestamp();
+Buy with:
+;buy 1k
+;buy 5k
+;buy 10k
+;buy 20k
+;buy 30k
+;buy 40k
+;buy 50k
+`);
 
-channel.send({embeds:[embed]});
+msg.channel.send({embeds:[embed]});
+}
+
+/* ================= BUY ================= */
+
+if(cmd==="buy"){
+
+const item = args[0];
+if(!item) return msg.reply("Use ;buy 1k / 5k / 10k / 20k / 30k / 40k / 50k");
+
+let price=0;
+let reward="";
+
+if(item==="1k"){price=500;reward="1k owo";}
+if(item==="5k"){price=2500;reward="5k owo";}
+if(item==="10k"){price=5000;reward="10k owo";}
+if(item==="20k"){price=10000;reward="20k owo";}
+if(item==="30k"){price=15000;reward="30k owo";}
+if(item==="40k"){price=20000;reward="40k owo";}
+if(item==="50k"){price=25000;reward="50k owo";}
+
+if(price===0) return msg.reply("❌ Item not found.");
+
+if(get(msg.author.id) < price)
+return msg.reply("❌ Not enough KmGems.");
+
+add(msg.author.id,-price);
+
+/* SAVE HISTORY */
+
+if(!history[msg.author.id]) history[msg.author.id]=[];
+
+history[msg.author.id].push({
+reward:reward,
+price:price,
+date:new Date().toLocaleString()
+});
+
+saveHistory();
+
+/* EMBED */
+
+const embed = new EmbedBuilder()
+.setColor("Green")
+.setTitle("🎉 Purchase Successful")
+.setDescription(`
+User: ${msg.author}
+
+Reward: **${reward}**
+
+Cost: **${price} KmGems**
+
+Remaining Balance
+💎 **${get(msg.author.id)} KmGems**
+
+📩 Open a **ticket** and moderator will confirm reward.
+`);
+
+/* BUTTON */
+
+const row = new ActionRowBuilder().addComponents(
+new ButtonBuilder()
+.setCustomId(`claim_${reward}_${msg.author.id}`)
+.setLabel("Claim Reward")
+.setStyle(ButtonStyle.Secondary)
+);
+
+msg.channel.send({embeds:[embed],components:[row]});
+}
+
+/* ================= GIVE ================= */
+
+if(cmd==="give"){
+
+if(!msg.member.permissions.has("Administrator"))
+return msg.reply("Admin only command.");
+
+const amount = parseInt(args[0]);
+const user = msg.mentions.users.first();
+
+if(!amount || !user)
+return msg.reply("Usage: ;give 500 @user");
+
+add(user.id,amount);
+
+msg.channel.send(`💎 Added **${amount} KmGems** to ${user}`);
+}
+
+/* ================= HISTORY ================= */
+
+if(cmd==="history"){
+
+if(msg.author.id !== msg.guild.ownerId)
+return msg.reply("Only server owner can use this.");
+
+const user = msg.mentions.users.first();
+
+if(!user) return msg.reply("Mention user.");
+
+if(!history[user.id] || history[user.id].length===0)
+return msg.reply("No purchase history.");
+
+let text="";
+
+history[user.id].forEach(h=>{
+text += `Reward: ${h.reward} | Cost: ${h.price} KmGems | ${h.date}\n`;
+});
+
+const embed = new EmbedBuilder()
+.setColor("Gold")
+.setTitle("🧾 Purchase History")
+.setDescription(`User: ${user}\n\n${text}`);
+
+msg.channel.send({embeds:[embed]});
+}
 
 });
+
+/* ================= BUTTON HANDLER ================= */
+
+client.on("interactionCreate", async interaction=>{
+
+try{
+
+if(!interaction.isButton()) return;
+
+if(interaction.customId.startsWith("claim_")){
+
+const data = interaction.customId.split("_");
+
+const reward = data[1];
+const buyerID = data[2];
+
+/* MODERATOR CHECK */
+
+if(!interaction.member.permissions.has("ManageMessages")){
+return interaction.reply({
+content:"❌ Only moderators can confirm rewards inside tickets.",
+ephemeral:true
+});
+}
+
+/* SUCCESS */
+
+const embed = new EmbedBuilder()
+.setColor("Green")
+.setTitle("✅ Reward Delivered")
+.setDescription(`
+Moderator: ${interaction.user}
+
+User: <@${buyerID}>
+
+Reward Delivered:
+**${reward}**
+`);
+
+await interaction.update({
+embeds:[embed],
+components:[]
+});
+
+}
+
+}catch(err){
+
+console.error("Button Error:",err);
+
+if(!interaction.replied){
+interaction.reply({
+content:"❌ Button error occurred.",
+ephemeral:true
+}).catch(()=>{});
+}
+
+}
+
+});
+
+/* ================= LOGIN ================= */
 
 client.login(process.env.TOKEN);
