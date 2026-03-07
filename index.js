@@ -461,4 +461,73 @@ tournament = null;
 
 });
 
+/* ================= WELCOME SYSTEM ================= */
+
+client.on("guildMemberAdd", async (member) => {
+
+const channel = member.guild.channels.cache.find(
+c => c.name === "welcome"
+);
+
+if(!channel) return;
+
+const created = member.user.createdAt;
+
+const days = Math.floor(
+(Date.now() - created.getTime()) / (1000 * 60 * 60 * 24)
+);
+
+const position =
+member.guild.members.cache
+.sort((a,b)=>a.joinedTimestamp-b.joinedTimestamp)
+.map(m=>m.id)
+.indexOf(member.id) + 1;
+
+const embed = new EmbedBuilder()
+.setColor("#9b59ff")
+.setTitle(`Welcome ${member.user.username} 👋`)
+.setThumbnail(member.user.displayAvatarURL({dynamic:true}))
+.setDescription(`Welcome **${member.user.username}** to 🏆 • **ShinosukeSG**! 🎉  
+Have an awesome time with us!`)
+.addFields(
+{
+name:"🆔 User ID",
+value: member.id,
+inline:false
+},
+{
+name:"📅 Account Created",
+value:`${created.toLocaleDateString()}  
+(${days} days ago)`,
+inline:false
+},
+{
+name:"⏳ Account Age",
+value:`${days} days`,
+inline:true
+},
+{
+name:"👑 Server Join Position",
+value:`${position}th member`,
+inline:true
+},
+{
+name:"🎭 Display Name",
+value: member.displayName,
+inline:false
+}
+)
+.setFooter({
+text:`Join the fun • 🏆 • ShinosukeSG • ${member.guild.memberCount} members`
+})
+.setTimestamp();
+
+channel.send({
+content:`Welcome <@${member.id}> 👋`,
+embeds:[embed]
+});
+
+});
+
 client.login(process.env.TOKEN);
+
