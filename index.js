@@ -24,6 +24,11 @@ const PREFIX = ";";
 const STAFF_ROLE = "Tournament Hoster";
 const MOD_ROLE = "Moderator";
 
+/* ================= EMOJIS ================= */
+
+const VS = "<:VS:1477014161484677150>";
+const TICK = "<:TICK:1467892699578236998>";
+
 /* ================= BANNERS ================= */
 
 const BANNERS = [
@@ -53,7 +58,6 @@ partials:["CHANNEL"]
 
 let welcomeChannel = null;
 let ticketCategory = null;
-
 let tournament = null;
 
 /* ================= READY ================= */
@@ -126,7 +130,6 @@ type:ChannelType.GuildCategory
 const embed = new EmbedBuilder()
 
 .setColor("Blue")
-
 .setTitle("🎫 Ticket System")
 
 .setDescription(`
@@ -187,7 +190,6 @@ image:banner()
 const embed = new EmbedBuilder()
 
 .setColor("Red")
-
 .setTitle(`🏆 ${name}`)
 
 .setDescription(`
@@ -258,7 +260,6 @@ tournament.matches[index].winner = tournament.matches[index].p1;
 }
 
 sendBracket(msg.channel);
-
 return;
 }
 
@@ -293,8 +294,7 @@ const embed = new EmbedBuilder()
 .setTitle("🎮 Match Room Code")
 
 .setDescription(`
-Match
-${p1} vs ${p2 || "BYE"}
+${p1} ${VS} ${p2 || "BYE"}
 
 Server: **${tournament.server}**
 Map: **${tournament.map}**
@@ -328,8 +328,8 @@ const p1 = m.p1==="BYE" ? "BYE" : `<@${m.p1}>`;
 const p2 = m.p2==="BYE" ? "BYE" : `<@${m.p2}>`;
 
 text+=`Match ${i+1}
-${p1} VS ${p2}
-${m.winner ? "✔ Complete":"⏳ Pending"}
+${p1} ${VS} ${p2}
+${m.winner ? TICK+" Completed":"⏳ Pending"}
 
 `;
 
@@ -338,9 +338,7 @@ ${m.winner ? "✔ Complete":"⏳ Pending"}
 const embed = new EmbedBuilder()
 
 .setTitle("📊 Tournament Bracket")
-
 .setDescription(text)
-
 .setImage(tournament.image);
 
 const row = new ActionRowBuilder().addComponents(
@@ -377,7 +375,6 @@ tournament.players.push(interaction.user.id);
 const embed = new EmbedBuilder()
 
 .setColor("Red")
-
 .setTitle(`🏆 ${tournament.name}`)
 
 .setDescription(`
@@ -393,18 +390,6 @@ Status: **OPEN**
 tournament.panel.edit({embeds:[embed]});
 
 interaction.reply({content:"Registered",ephemeral:true});
-
-}
-
-/* UNREGISTER */
-
-if(interaction.customId==="unregister"){
-
-tournament.players = tournament.players.filter(
-id=>id!==interaction.user.id
-);
-
-interaction.reply({content:"Unregistered",ephemeral:true});
 
 }
 
@@ -424,32 +409,25 @@ const user = await client.users.fetch(winners[0]);
 const embed = new EmbedBuilder()
 
 .setTitle("🏆 TOURNAMENT WINNER")
-
 .setDescription(`${user}`)
-
+.setThumbnail(user.displayAvatarURL({dynamic:true,size:128}))
 .setImage(tournament.image)
-
 .setColor("Gold");
 
 interaction.channel.send({embeds:[embed]});
-
 tournament=null;
-
 return;
 }
 
 tournament.round++;
-
 tournament.matches=[];
 
 for(let i=0;i<winners.length;i+=2){
 
 tournament.matches.push({
-
 p1:winners[i],
 p2:winners[i+1] || "BYE",
 winner:null
-
 });
 
 }
@@ -457,128 +435,6 @@ winner:null
 sendBracket(interaction.channel);
 
 }
-
-/* ================= TICKETS ================= */
-
-if(interaction.customId.startsWith("ticket_")){
-
-const type = interaction.customId.split("_")[1];
-
-const channel = await interaction.guild.channels.create({
-
-name:`${type}_${interaction.user.username}`,
-
-type:ChannelType.GuildText,
-
-parent:ticketCategory,
-
-permissionOverwrites:[
-
-{
-id:interaction.guild.id,
-deny:[PermissionsBitField.Flags.ViewChannel]
-},
-
-{
-id:interaction.user.id,
-allow:[
-PermissionsBitField.Flags.ViewChannel,
-PermissionsBitField.Flags.SendMessages
-]
-},
-
-{
-id:interaction.guild.roles.cache.find(r=>r.name===MOD_ROLE).id,
-allow:[PermissionsBitField.Flags.ViewChannel]
-}
-
-]
-
-});
-
-const closeRow = new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("close_ticket")
-.setLabel("🔒 Close Ticket")
-.setStyle(ButtonStyle.Secondary)
-
-);
-
-channel.send({
-content:`${interaction.user}`,
-embeds:[new EmbedBuilder().setTitle(`Ticket: ${type}`).setColor("Green")],
-components:[closeRow]
-});
-
-interaction.reply({
-content:`Ticket created: ${channel}`,
-ephemeral:true
-});
-
-}
-
-/* CLOSE TICKET */
-
-if(interaction.customId==="close_ticket"){
-
-if(!interaction.member.roles.cache.some(r=>r.name===MOD_ROLE))
-return interaction.reply({content:"Only moderators can close tickets",ephemeral:true});
-
-interaction.channel.delete();
-
-}
-
-});
-
-/* ================= WELCOME EVENT ================= */
-
-client.on("guildMemberAdd", member=>{
-
-if(!welcomeChannel) return;
-
-const channel = member.guild.channels.cache.get(welcomeChannel);
-
-const created = new Date(member.user.createdTimestamp).toDateString();
-const age = Math.floor((Date.now()-member.user.createdTimestamp)/86400000);
-
-const embed = new EmbedBuilder()
-
-.setColor("#8e44ad")
-
-.setTitle(`Welcome ${member.user.username} 👋`)
-
-.setThumbnail(member.user.displayAvatarURL())
-
-.setDescription(`
-👋 Welcome **${member.user.username}**
-
-🏆 ${member.guild.name}
-Have fun here!
-`)
-
-.addFields(
-
-{name:"🆔 User ID",value:member.id},
-
-{name:"📅 Account Created",value:created},
-
-{name:"⏳ Account Age",value:`${age} days`},
-
-{name:"🎭 Display Name",value:member.displayName}
-
-)
-
-.setImage(banner())
-
-.setFooter({text:"Enjoy the fun 😀"})
-
-.setTimestamp();
-
-channel.send({
-content:`Welcome <@${member.id}>`,
-embeds:[embed]
-});
 
 });
 
