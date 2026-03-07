@@ -4,97 +4,164 @@ require("dotenv").config();
 
 const express = require("express");
 const app = express();
+
 app.get("/", (req,res)=>res.send("Bot Alive"));
 app.listen(process.env.PORT || 3000);
 
+
 /* ================= DISCORD ================= */
 
-const {
-Client,
-GatewayIntentBits,
-EmbedBuilder,
-ActionRowBuilder,
-ButtonBuilder,
-ButtonStyle,
-ChannelType,
-PermissionsBitField
+const { 
+Client, 
+GatewayIntentBits, 
+EmbedBuilder, 
+AttachmentBuilder 
 } = require("discord.js");
 
 const client = new Client({
 intents:[
 GatewayIntentBits.Guilds,
+GatewayIntentBits.GuildMembers,
 GatewayIntentBits.GuildMessages,
-GatewayIntentBits.MessageContent,
-GatewayIntentBits.GuildMembers
-]
-});
+GatewayIntentBits.MessageContent
+]});
 
-const PREFIX="!";
+const prefix = "!";
 
-const VS="<:VS:1477014161484677150>";
-const TICK="<:TICK:1467892699578236998>";
+/* ================= CONFIG ================= */
 
-/* ================= IMAGES ================= */
-
-const BRACKET_IMAGES=[
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png",
-"https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png",
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png",
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png"
-];
-
-/* ================= DATA ================= */
-
-let tournament={
-players:[],
-matches:[],
-started:false,
-maxPlayers:0,
-registerMessage:null
-};
+const welcomeChannel = "WELCOME_CHANNEL_ID";
+const ticketChannel = "TICKET_CHANNEL_ID";
+const mapName = "Bermuda";
 
 /* ================= READY ================= */
 
-client.once("ready",()=>{
+client.once("ready", ()=>{
 console.log(`Logged in as ${client.user.tag}`);
 });
 
-/* ================= WELCOME ================= */
 
-client.on("guildMemberAdd",member=>{
+/* ================= JOIN EVENT ================= */
 
-const channel=member.guild.systemChannel;
+client.on("guildMemberAdd", async member => {
+
+const channel = member.guild.channels.cache.get(welcomeChannel);
 if(!channel) return;
 
-const embed=new EmbedBuilder()
-.setTitle("WELCOME")
-.setDescription(`Welcome ${member}`)
-.setThumbnail(member.user.displayAvatarURL())
-.setColor("Green");
+const joinPosition = member.guild.memberCount;
 
-channel.send({embeds:[embed]});
+const created = `<t:${Math.floor(member.user.createdTimestamp/1000)}:D>`;
+const ageDays = Math.floor((Date.now() - member.user.createdTimestamp) / 86400000);
+
+const embed = new EmbedBuilder()
+
+.setColor("#8a5cff")
+
+.setAuthor({
+name:`Welcome ${member.user.username}`,
+iconURL:member.user.displayAvatarURL()
+})
+
+.setThumbnail(member.user.displayAvatarURL())
+
+.setDescription(
+`Welcome **${member.user.username}** to 🏆 **${member.guild.name}**!\nHave an awesome time with us!`
+)
+
+.addFields(
+
+{name:"🆔 User ID",value:member.user.id},
+
+{name:"📅 Account Created",value:`${created}`},
+
+{name:"⏳ Account Age",value:`${ageDays} days`},
+
+{name:"👑 Server Join Position",value:`${joinPosition}th member`},
+
+{name:"🎭 Display Name",value:`${member.displayName}`},
+
+{name:"🌐 Server",value:`${member.guild.name}`},
+
+{name:"🗺 Map",value:`${mapName}`}
+
+)
+
+.setFooter({
+text:`${member.guild.name} • ${member.guild.memberCount} members`
+})
+
+.setTimestamp();
+
+channel.send({
+content:`Welcome <@${member.id}> 👋`,
+embeds:[embed]
+});
 
 });
 
-/* ================= COMMANDS ================= */
 
-client.on("messageCreate",async message=>{
+/* ================= BYE COMMAND ================= */
+
+client.on("messageCreate", message=>{
 
 if(message.author.bot) return;
-if(!message.content.startsWith(PREFIX)) return;
 
-const args=message.content.slice(PREFIX.length).trim().split(/ +/);
-const cmd=args.shift().toLowerCase();
+if(message.content === "!bye"){
 
-/* ---------- WELCOME ---------- */
+const embed = new EmbedBuilder()
 
-if(cmd==="welcome"){
+.setColor("Red")
 
-const embed=new EmbedBuilder()
-.setTitle("WELCOME")
-.setDescription(`Welcome to **${message.guild.name}**`)
+.setDescription(`Goodbye **${message.author.username}** 👋  
+Thanks for being part of **${message.guild.name}**!`)
+
+.addFields(
+{name:"Server",value:message.guild.name},
+{name:"User",value:message.author.tag}
+)
+
 .setThumbnail(message.author.displayAvatarURL())
-.setColor("Green");
+
+.setTimestamp();
+
+message.channel.send({embeds:[embed]});
+}
+
+});
+
+
+/* ================= TICKET PANEL ================= */
+
+client.on("messageCreate", async message => {
+
+if(message.author.bot) return;
+
+if(message.content === "!ticketpanel"){
+
+const embed = new EmbedBuilder()
+
+.setTitle("🎫 Support Tickets")
+
+.setDescription(
+"Need help?\nClick the button below to create a ticket."
+)
+
+.setColor("Blue")
+
+.setImage("https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png?ex=69ad0a44&is=69abb8c4&hm=1e549347b81208b1dc0079032ccc4693d52f0c8d0480a1fc0f9c40dd70e7d882&") // ticket panel image
+
+.setFooter({text:"Support System"});
+
+message.channel.send({embeds:[embed]});
+
+}
+
+});
+
+
+/* ================= LOGIN ================= */
+
+client.login(process.env.TOKEN);
 
 message.channel.send({embeds:[embed]});
 
@@ -424,3 +491,4 @@ await tournament.registerMessage.edit({components:[row]});
 /* ================= LOGIN ================= */
 
 client.login(process.env.TOKEN);
+
