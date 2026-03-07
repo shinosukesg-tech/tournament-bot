@@ -24,6 +24,8 @@ const PREFIX = ";";
 const STAFF_ROLE = "Tournament Hoster";
 const MOD_ROLE = "Moderator";
 
+/* ================= BANNERS ================= */
+
 const BANNERS = [
 "https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png",
 "https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png",
@@ -33,6 +35,8 @@ const BANNERS = [
 function banner(){
 return BANNERS[Math.floor(Math.random()*BANNERS.length)];
 }
+
+/* ================= CLIENT ================= */
 
 const client = new Client({
 intents:[
@@ -71,6 +75,10 @@ member.roles.cache.some(r=>r.name===STAFF_ROLE);
 
 function autoDelete(msg){
 setTimeout(()=>msg.delete().catch(()=>{}),2000);
+}
+
+function allFinished(){
+return tournament.matches.every(m=>m.winner);
 }
 
 /* ================= COMMANDS ================= */
@@ -122,9 +130,9 @@ const embed = new EmbedBuilder()
 .setTitle("🎫 Ticket System")
 
 .setDescription(`
-🛡 **Support** → Need help
-📋 **Apply** → Staff application
-🎁 **Reward** → Claim reward
+🛡 Support → Need help
+📋 Apply → Staff application
+🎁 Reward → Claim reward
 `)
 
 .setImage(banner());
@@ -171,7 +179,8 @@ map,
 maxPlayers:size,
 players:[],
 matches:[],
-round:1
+round:1,
+image:banner()
 
 };
 
@@ -186,9 +195,10 @@ const embed = new EmbedBuilder()
 🌍 Server: **${server}**
 🗺 Map: **${map}**
 👥 Players: **0/${size}**
+Status: **OPEN**
 `)
 
-.setImage(banner());
+.setImage(tournament.image);
 
 const row = new ActionRowBuilder().addComponents(
 
@@ -283,7 +293,7 @@ const embed = new EmbedBuilder()
 .setTitle("🎮 Match Room Code")
 
 .setDescription(`
-Match:
+Match
 ${p1} vs ${p2 || "BYE"}
 
 Server: **${tournament.server}**
@@ -295,7 +305,7 @@ ${code}
 \`\`\`
 `)
 
-.setImage(banner());
+.setImage(tournament.image);
 
 p1.send({embeds:[embed]});
 if(p2) p2.send({embeds:[embed]});
@@ -331,9 +341,18 @@ const embed = new EmbedBuilder()
 
 .setDescription(text)
 
-.setImage(banner());
+.setImage(tournament.image);
 
-channel.send({embeds:[embed]});
+const row = new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("next_round")
+.setLabel("Next Round")
+.setStyle(ButtonStyle.Primary)
+
+);
+
+channel.send({embeds:[embed],components:[row]});
 
 }
 
@@ -347,7 +366,31 @@ if(!interaction.isButton()) return;
 
 if(interaction.customId==="register"){
 
+if(tournament.players.includes(interaction.user.id))
+return interaction.reply({content:"Already registered",ephemeral:true});
+
+if(tournament.players.length>=tournament.maxPlayers)
+return interaction.reply({content:"Tournament full",ephemeral:true});
+
 tournament.players.push(interaction.user.id);
+
+const embed = new EmbedBuilder()
+
+.setColor("Red")
+
+.setTitle(`🏆 ${tournament.name}`)
+
+.setDescription(`
+🎮 Mode: **1v1**
+🌍 Server: **${tournament.server}**
+🗺 Map: **${tournament.map}**
+👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
+Status: **OPEN**
+`)
+
+.setImage(tournament.image);
+
+tournament.panel.edit({embeds:[embed]});
 
 interaction.reply({content:"Registered",ephemeral:true});
 
@@ -365,7 +408,57 @@ interaction.reply({content:"Unregistered",ephemeral:true});
 
 }
 
-/* ================= TICKET CREATE ================= */
+/* NEXT ROUND */
+
+if(interaction.customId==="next_round"){
+
+if(!allFinished())
+return interaction.reply({content:"Matches unfinished",ephemeral:true});
+
+let winners = tournament.matches.map(m=>m.winner);
+
+if(winners.length===1){
+
+const user = await client.users.fetch(winners[0]);
+
+const embed = new EmbedBuilder()
+
+.setTitle("🏆 TOURNAMENT WINNER")
+
+.setDescription(`${user}`)
+
+.setImage(tournament.image)
+
+.setColor("Gold");
+
+interaction.channel.send({embeds:[embed]});
+
+tournament=null;
+
+return;
+}
+
+tournament.round++;
+
+tournament.matches=[];
+
+for(let i=0;i<winners.length;i+=2){
+
+tournament.matches.push({
+
+p1:winners[i],
+p2:winners[i+1] || "BYE",
+winner:null
+
+});
+
+}
+
+sendBracket(interaction.channel);
+
+}
+
+/* ================= TICKETS ================= */
 
 if(interaction.customId.startsWith("ticket_")){
 
