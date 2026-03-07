@@ -43,30 +43,14 @@ let tournament = {
 players:[],
 matches:[],
 started:false,
-maxPlayers:0
+maxPlayers:0,
+registerMessage:null
 };
 
 /* ================= READY ================= */
 
 client.once("ready",()=>{
 console.log(`Logged in as ${client.user.tag}`);
-});
-
-/* ================= AUTO WELCOME ================= */
-
-client.on("guildMemberAdd", member=>{
-
-const channel = member.guild.systemChannel;
-if(!channel) return;
-
-const embed = new EmbedBuilder()
-.setTitle("WELCOME")
-.setDescription(`Welcome ${member}`)
-.setThumbnail(member.user.displayAvatarURL())
-.setColor("Green");
-
-channel.send({embeds:[embed]});
-
 });
 
 /* ================= COMMANDS ================= */
@@ -83,7 +67,7 @@ const cmd = args.shift().toLowerCase();
 
 if(cmd === "tour"){
 
-const players = args[0];
+const players = parseInt(args[0]);
 const server = args[1];
 const map = args[2];
 const reward = args.slice(3).join(" ");
@@ -93,12 +77,6 @@ tournament.matches=[];
 tournament.started=false;
 tournament.maxPlayers = players;
 
-const images = [
-"https://media.discordapp.net/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png",
-"https://media.discordapp.net/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png",
-"https://media.discordapp.net/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
-];
-
 const embed = new EmbedBuilder()
 .setTitle("ShinTours Tournament")
 .setDescription(`
@@ -107,17 +85,30 @@ Server: **${server}**
 Map: **${map}**
 Reward: **${reward}**
 `)
-.setImage(images[Math.floor(Math.random()*images.length)])
 .setColor("Blue");
 
 const row = new ActionRowBuilder().addComponents(
+
 new ButtonBuilder()
 .setCustomId("register")
 .setLabel("Register")
-.setStyle(ButtonStyle.Success)
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("count")
+.setLabel(`Players: 0/${players}`)
+.setStyle(ButtonStyle.Secondary)
+.setDisabled(true),
+
+new ButtonBuilder()
+.setCustomId("unregister")
+.setLabel("Unregister")
+.setStyle(ButtonStyle.Danger)
+
 );
 
-message.channel.send({embeds:[embed],components:[row]});
+const msg = await message.channel.send({embeds:[embed],components:[row]});
+tournament.registerMessage = msg;
 
 }
 
@@ -150,13 +141,16 @@ sendBracket(message.channel);
 
 if(cmd === "bye"){
 
-tournament.matches.forEach(m=>{
-if(!m.p2){
-m.winner = m.p1
-}
-})
+let advanced = 0;
 
-message.channel.send("BYE players advanced");
+tournament.matches.forEach(m=>{
+if(!m.p2 && !m.winner){
+m.winner = m.p1;
+advanced++;
+}
+});
+
+message.channel.send(`Auto qualified ${advanced} BYE players`);
 
 }
 
@@ -167,15 +161,19 @@ if(cmd === "qual"){
 let arg = args[0];
 
 if(arg === "bye1"){
-tournament.matches[0].winner = tournament.matches[0].p1
-message.channel.send("<:TICK:1467892699578236998> Bye1 qualified")
-return
+if(tournament.matches[0]){
+tournament.matches[0].winner = tournament.matches[0].p1;
+message.channel.send("Bye1 qualified");
+}
+return;
 }
 
 if(arg === "bye2"){
-tournament.matches[1].winner = tournament.matches[1].p1
-message.channel.send("<:TICK:1467892699578236998> Bye2 qualified")
-return
+if(tournament.matches[1]){
+tournament.matches[1].winner = tournament.matches[1].p1;
+message.channel.send("Bye2 qualified");
+}
+return;
 }
 
 let user = message.mentions.users.first();
@@ -186,13 +184,8 @@ m => m.p1 === user.id || m.p2 === user.id
 );
 
 if(match){
-
 match.winner = user.id;
-
-message.channel.send(
-`<:TICK:1467892699578236998> ${user.username} qualified`
-);
-
+message.channel.send(`${user.username} qualified`);
 }
 
 }
@@ -250,11 +243,8 @@ let text = "";
 
 tournament.matches.forEach((m,i)=>{
 
-let tick1 = m.winner === m.p1 ? " <:TICK:1467892699578236998>" : "";
-let tick2 = m.winner === m.p2 ? " <:TICK:1467892699578236998>" : "";
-
 text += `Match ${i+1}
-<@${m.p1}>${tick1} <:VS:1477014161484677150> <@${m.p2}>${tick2}
+<@${m.p1}> <:VS:1477014161484677150> <@${m.p2 || "BYE"}>
 
 `;
 
@@ -275,7 +265,7 @@ client.on("interactionCreate", async interaction=>{
 
 if(!interaction.isButton()) return;
 
-/* REGISTER BUTTON */
+/* REGISTER */
 
 if(interaction.customId === "register"){
 
@@ -290,50 +280,58 @@ return interaction.reply({content:"Tournament full",ephemeral:true});
 
 tournament.players.push(interaction.user.id);
 
-interaction.reply({
-content:`Registered (${tournament.players.length}/${tournament.maxPlayers})`,
-ephemeral:true
-});
+updateCounter();
 
-return;
+interaction.reply({content:"Registered",ephemeral:true});
 
 }
 
-/* TICKET BUTTONS */
+/* UNREGISTER */
 
-let name = interaction.user.username;
-let type = interaction.customId;
+if(interaction.customId === "unregister"){
 
-if(["support","apply","reward"].includes(type)){
+if(!tournament.players.includes(interaction.user.id))
+return interaction.reply({content:"You are not registered",ephemeral:true});
 
-const channel = await interaction.guild.channels.create({
-name:`${type}_${name}`,
-type:ChannelType.GuildText,
-permissionOverwrites:[
-{
-id:interaction.guild.id,
-deny:[PermissionsBitField.Flags.ViewChannel]
-},
-{
-id:interaction.user.id,
-allow:[
-PermissionsBitField.Flags.ViewChannel,
-PermissionsBitField.Flags.SendMessages
-]
-}
-]
-});
+tournament.players = tournament.players.filter(id=>id!==interaction.user.id);
 
-channel.send(`${interaction.user} ticket opened`);
+updateCounter();
 
-interaction.reply({
-content:`Ticket created: ${channel}`,
-ephemeral:true
-});
+interaction.reply({content:"Unregistered",ephemeral:true});
 
 }
 
 });
+
+/* ================= UPDATE COUNTER ================= */
+
+async function updateCounter(){
+
+if(!tournament.registerMessage) return;
+
+const row = new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("register")
+.setLabel("Register")
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("count")
+.setLabel(`Players: ${tournament.players.length}/${tournament.maxPlayers}`)
+.setStyle(ButtonStyle.Secondary)
+.setDisabled(true),
+
+new ButtonBuilder()
+.setCustomId("unregister")
+.setLabel("Unregister")
+.setStyle(ButtonStyle.Danger)
+
+);
+
+await tournament.registerMessage.edit({components:[row]});
+
+}
 
 /* ================= LOGIN ================= */
 
