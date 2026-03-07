@@ -33,8 +33,8 @@ const prefix = "!";
 
 /* ================= CONFIG ================= */
 
-const welcomeChannel = "WELCOME_CHANNEL_ID";
-const ticketChannel = "TICKET_CHANNEL_ID";
+const welcomeChannel = "1465234114318696498";
+const ticketChannel = "1460635938727399537";
 const mapName = "Bermuda";
 
 /* ================= READY ================= */
@@ -494,5 +494,6 @@ await tournament.registerMessage.edit({components:[row]});
 /* ================= LOGIN ================= */
 
 client.login(process.env.TOKEN);
+
 
 
