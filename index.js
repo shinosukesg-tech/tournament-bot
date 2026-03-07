@@ -114,55 +114,6 @@ autoDelete(m);
 
 }
 
-/* ================= TICKET PANEL ================= */
-
-if(cmd==="ticketpanel" && args[0]==="add"){
-
-if(!ticketCategory){
-
-ticketCategory = await msg.guild.channels.create({
-name:"tickets",
-type:ChannelType.GuildCategory
-});
-
-}
-
-const embed = new EmbedBuilder()
-
-.setColor("Blue")
-.setTitle("🎫 Ticket System")
-
-.setDescription(`
-🛡 Support → Need help
-📋 Apply → Staff application
-🎁 Reward → Claim reward
-`)
-
-.setImage(banner());
-
-const row = new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("ticket_support")
-.setLabel("🛡 Support")
-.setStyle(ButtonStyle.Danger),
-
-new ButtonBuilder()
-.setCustomId("ticket_apply")
-.setLabel("📋 Apply")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("ticket_reward")
-.setLabel("🎁 Reward")
-.setStyle(ButtonStyle.Primary)
-
-);
-
-msg.channel.send({embeds:[embed],components:[row]});
-
-}
-
 /* ================= CREATE TOURNAMENT ================= */
 
 if(cmd==="1v1"){
@@ -227,6 +178,8 @@ components:[row]
 
 if(cmd==="start"){
 
+tournament.image = banner(); // change image when bracket starts
+
 const shuffled = shuffle(tournament.players);
 
 tournament.matches=[];
@@ -272,45 +225,6 @@ m=>m.p1===user.id || m.p2===user.id
 match.winner = user.id;
 
 sendBracket(msg.channel);
-
-}
-
-/* ================= ROOM CODE ================= */
-
-if(cmd==="code"){
-
-const code = args[0];
-const user = msg.mentions.users.first();
-
-const match = tournament.matches.find(
-m=>m.p1===user.id || m.p2===user.id
-);
-
-const p1 = await client.users.fetch(match.p1);
-const p2 = match.p2==="BYE" ? null : await client.users.fetch(match.p2);
-
-const embed = new EmbedBuilder()
-
-.setTitle("🎮 Match Room Code")
-
-.setDescription(`
-${p1} ${VS} ${p2 || "BYE"}
-
-Server: **${tournament.server}**
-Map: **${tournament.map}**
-
-Room Code
-\`\`\`
-${code}
-\`\`\`
-`)
-
-.setImage(tournament.image);
-
-p1.send({embeds:[embed]});
-if(p2) p2.send({embeds:[embed]});
-
-msg.channel.send("📩 Code sent to players");
 
 }
 
@@ -360,45 +274,14 @@ client.on("interactionCreate", async interaction=>{
 
 if(!interaction.isButton()) return;
 
-/* REGISTER */
-
-if(interaction.customId==="register"){
-
-if(tournament.players.includes(interaction.user.id))
-return interaction.reply({content:"Already registered",ephemeral:true});
-
-if(tournament.players.length>=tournament.maxPlayers)
-return interaction.reply({content:"Tournament full",ephemeral:true});
-
-tournament.players.push(interaction.user.id);
-
-const embed = new EmbedBuilder()
-
-.setColor("Red")
-.setTitle(`🏆 ${tournament.name}`)
-
-.setDescription(`
-🎮 Mode: **1v1**
-🌍 Server: **${tournament.server}**
-🗺 Map: **${tournament.map}**
-👥 Players: **${tournament.players.length}/${tournament.maxPlayers}**
-Status: **OPEN**
-`)
-
-.setImage(tournament.image);
-
-tournament.panel.edit({embeds:[embed]});
-
-interaction.reply({content:"Registered",ephemeral:true});
-
-}
-
 /* NEXT ROUND */
 
 if(interaction.customId==="next_round"){
 
 if(!allFinished())
 return interaction.reply({content:"Matches unfinished",ephemeral:true});
+
+tournament.image = banner(); // change image each round
 
 let winners = tournament.matches.map(m=>m.winner);
 
@@ -411,10 +294,11 @@ const embed = new EmbedBuilder()
 .setTitle("🏆 TOURNAMENT WINNER")
 .setDescription(`${user}`)
 .setThumbnail(user.displayAvatarURL({dynamic:true,size:128}))
-.setImage(tournament.image)
+.setImage(banner()) // new winner banner
 .setColor("Gold");
 
 interaction.channel.send({embeds:[embed]});
+
 tournament=null;
 return;
 }
