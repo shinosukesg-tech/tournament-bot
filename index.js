@@ -1,329 +1,396 @@
 require("dotenv").config();
 
 /* ================= UPTIME ================= */
+
 const express = require("express");
 const app = express();
-app.get("/", (req,res)=>res.send("Alive"));
+app.get("/", (req, res) => res.send("Bot Alive"));
 app.listen(process.env.PORT || 3000);
 
 /* ================= DISCORD ================= */
 
 const {
-Client,
-GatewayIntentBits,
-EmbedBuilder,
-ActionRowBuilder,
-ButtonBuilder,
-ButtonStyle,
-PermissionsBitField,
-ChannelType
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  PermissionsBitField
 } = require("discord.js");
 
-const PREFIX=";"
-const STAFF_ROLE="Tournament Hoster"
-const MOD_ROLE="Moderator"
-const SERVER_NAME="ShinosukeSG"
+const PREFIX = ";";
+const SERVER_NAME = "ShinosukeSG";
+const STAFF_ROLE = "Tournament Hoster";
 
-const client=new Client({
-intents:[
-GatewayIntentBits.Guilds,
-GatewayIntentBits.GuildMessages,
-GatewayIntentBits.GuildMembers,
-GatewayIntentBits.MessageContent
-]
-})
-
-/* ================= IMAGES ================= */
-
-const TOUR_IMAGES=[
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png",
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png",
-"https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png",
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
-]
-
-function randomImage(){
-return TOUR_IMAGES[Math.floor(Math.random()*TOUR_IMAGES.length)]
-}
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent
+  ]
+});
 
 /* ================= UTIL ================= */
 
-const isStaff=m=>
-m.permissions.has(PermissionsBitField.Flags.Administrator) ||
-m.roles.cache.some(r=>r.name===STAFF_ROLE)
+const shuffle = a => [...a].sort(() => Math.random() - 0.5);
 
-const shuffle=a=>[...a].sort(()=>Math.random()-0.5)
+const isStaff = m =>
+  m.permissions.has(PermissionsBitField.Flags.Administrator) ||
+  m.roles.cache.some(r => r.name === STAFF_ROLE);
 
-/* ================= TOURNAMENT ================= */
+/* ================= DATA ================= */
 
-let tournament=null
+let tournament = null;
 
-function tourEmbed(){
-
-return new EmbedBuilder()
-.setColor("#ff003c")
-.setTitle(`🏆 ${SERVER_NAME} Tournament`)
-.setDescription(`
+function tourEmbed() {
+  return new EmbedBuilder()
+    .setColor("#ff003c")
+    .setTitle(`🏆 ${SERVER_NAME} Tournament`)
+    .setDescription(`
 🎮 Mode : **1v1**
 🌍 Server : **${tournament.server}**
 🗺 Map : **${tournament.map}**
 
 👥 Players : **${tournament.players.length}/${tournament.size}**
 `)
-.setImage(randomImage())
-.setTimestamp()
+    .setTimestamp();
+}
+
+/* ================= WELCOME ================= */
+
+async function sendWelcome(member) {
+
+  const channel = member.guild.channels.cache.find(c =>
+    c.name.toLowerCase().includes("welcome")
+  );
+
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setColor("#9b59ff")
+    .setTitle(`Welcome ${member.user.username} 👋`)
+    .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 1024 }))
+    .setDescription(`Welcome to **${SERVER_NAME}**`)
+    .addFields(
+      { name: "User ID", value: member.id },
+      { name: "Account Created", value: member.user.createdAt.toDateString() }
+    );
+
+  channel.send({
+    content: `Welcome <@${member.id}>`,
+    embeds: [embed]
+  });
 
 }
 
-/* ================= WELCOME SYSTEM ================= */
-
-async function sendWelcome(member){
-
-const channel=member.guild.channels.cache.find(c=>c.name.includes("welcome"))
-if(!channel) return
-
-const created=member.user.createdAt
-const days=Math.floor((Date.now()-created)/(1000*60*60*24))
-
-const embed=new EmbedBuilder()
-
-.setColor("#9b59ff")
-.setTitle(`Welcome ${member.user.username} 👋`)
-.setThumbnail(member.user.displayAvatarURL({dynamic:true,size:1024}))
-.setDescription(`
-Welcome **${member.user.username}** to 🏆 **${SERVER_NAME}**
-Have fun here!
-`)
-.addFields(
-{name:"🆔 User ID",value:member.id},
-{name:"📅 Account Created",value:created.toDateString()},
-{name:"⏳ Account Age",value:`${days} days`},
-{name:"🎭 Display Name",value:member.displayName}
-)
-
-channel.send({
-content:`Welcome <@${member.id}>`,
-embeds:[embed]
-})
-
-}
-
-client.on("guildMemberAdd",sendWelcome)
+client.on("guildMemberAdd", sendWelcome);
 
 /* ================= COMMANDS ================= */
 
-client.on("messageCreate",async msg=>{
+client.on("messageCreate", async msg => {
 
-if(msg.author.bot) return
-if(!msg.content.startsWith(PREFIX)) return
+  if (msg.author.bot) return;
+  if (!msg.content.startsWith(PREFIX)) return;
 
-const args=msg.content.slice(PREFIX.length).split(/ +/)
-const cmd=args.shift().toLowerCase()
+  const args = msg.content.slice(PREFIX.length).split(/ +/);
+  const cmd = args.shift().toLowerCase();
 
-/* ===== FORCE WELCOME COMMAND ===== */
+  /* ===== HELP ===== */
 
-if(cmd==="welcome"){
+  if (cmd === "help") {
 
-const user=msg.mentions.members.first()||msg.member
-sendWelcome(user)
+    const embed = new EmbedBuilder()
+      .setColor("#00bfff")
+      .setTitle("📘 Tournament Commands")
+      .setDescription(`
+;1v1 <size> <server> <map>
+;start
+;qual @player
+;code ROOMCODE @player
+;del
+;welcome
+`);
 
-}
+    msg.channel.send({ embeds: [embed] });
 
-/* ===== CREATE TOURNAMENT ===== */
+  }
 
-if(cmd==="1v1"){
+  /* ===== WELCOME COMMAND ===== */
 
-if(!isStaff(msg.member)) return
+  if (cmd === "welcome") {
 
-const size=parseInt(args[0])
-const server=args[1]
-const map=args[2]
+    let member = msg.mentions.members.first() || msg.member;
+    sendWelcome(member);
 
-tournament={
-size,
-server,
-map,
-players:[],
-matches:[]
-}
+  }
 
-const row=new ActionRowBuilder().addComponents(
+  /* ===== ROOM CODE ===== */
 
-new ButtonBuilder()
-.setCustomId("register")
-.setLabel("Register")
-.setEmoji("🎮")
-.setStyle(ButtonStyle.Success),
+  if (cmd === "code") {
 
-new ButtonBuilder()
-.setCustomId("playercount")
-.setLabel(`Players 0/${size}`)
-.setStyle(ButtonStyle.Secondary)
-.setDisabled(true)
+    const room = args[0];
+    const user = msg.mentions.users.first();
 
-)
+    if (!room || !user) return msg.reply("Usage: ;code ROOM @player");
 
-msg.channel.send({
-embeds:[tourEmbed()],
-components:[row]
-})
-
-}
-
-/* ===== START ===== */
-
-if(cmd==="start"){
-
-if(!tournament) return
-
-const shuffled=shuffle(tournament.players)
-
-for(let i=0;i<shuffled.length;i+=2){
-
-tournament.matches.push({
-p1:shuffled[i],
-p2:shuffled[i+1],
-winner:null
-})
-
-}
-
-msg.channel.send("Bracket started.")
-
-}
-
-/* ===== QUAL ===== */
-
-if(cmd==="qual"){
-
-const user=msg.mentions.users.first()
-if(!user) return
-
-const match=tournament.matches.find(
-m=>m.p1===user.id || m.p2===user.id
-)
-
-if(!match) return
-
-match.winner=user.id
-
-msg.channel.send(`${user.username} qualified.`)
-
-}
-
-/* ===== ROOM CODE ===== */
-
-if(cmd==="code"){
-
-const room=args[0]
-const user=msg.mentions.users.first()
-if(!room||!user) return
-
-const embed=new EmbedBuilder()
-.setColor("#ff003c")
-.setTitle("🎮 MATCH ROOM")
-.setDescription(`
-🏆 ${SERVER_NAME}
-
+    const embed = new EmbedBuilder()
+      .setColor("#ff003c")
+      .setTitle("🎮 Match Room")
+      .setDescription(`
 ROOM CODE
-\`\`\`${room}\`\`\`
+\`\`\`
+${room}
+\`\`\`
+Server : ${tournament?.server || "Unknown"}
+Map : ${tournament?.map || "Unknown"}
+`);
 
-🌍 ${tournament.server}
-🗺 ${tournament.map}
-`)
+    user.send({ embeds: [embed] }).catch(() => { });
 
-user.send({embeds:[embed]}).catch(()=>{})
+    msg.channel.send("Room code sent.");
 
-msg.channel.send("Room code sent.")
+  }
 
-}
+  /* ===== CREATE TOURNAMENT ===== */
 
-/* ===== DELETE ===== */
+  if (cmd === "1v1") {
 
-if(cmd==="del"){
+    if (!isStaff(msg.member)) return;
 
-tournament=null
-msg.channel.send("Tournament deleted.")
+    const size = parseInt(args[0]);
+    const server = args[1];
+    const map = args[2];
 
-}
+    tournament = {
+      size,
+      server,
+      map,
+      players: [],
+      matches: []
+    };
 
-})
+    const row = new ActionRowBuilder().addComponents(
+
+      new ButtonBuilder()
+        .setCustomId("register")
+        .setLabel("Register")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId("playercount")
+        .setLabel(`Players 0/${size}`)
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
+
+    );
+
+    msg.channel.send({
+      embeds: [tourEmbed()],
+      components: [row]
+    });
+
+  }
+
+  /* ===== START ===== */
+
+  if (cmd === "start") {
+
+    if (!tournament) return;
+
+    const shuffled = shuffle(tournament.players);
+
+    tournament.matches = [];
+
+    for (let i = 0; i < shuffled.length; i += 2) {
+
+      tournament.matches.push({
+        p1: shuffled[i],
+        p2: shuffled[i + 1],
+        winner: null
+      });
+
+    }
+
+    let bracket = "";
+
+    tournament.matches.forEach((m, i) => {
+
+      bracket += `Match ${i + 1}\n<@${m.p1}> vs <@${m.p2 || "BYE"}>\n\n`;
+
+    });
+
+    const row = new ActionRowBuilder().addComponents(
+
+      new ButtonBuilder()
+        .setCustomId("next_round")
+        .setLabel("Next Round")
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId("announce_winner")
+        .setLabel("Announce Winner")
+        .setStyle(ButtonStyle.Success)
+
+    );
+
+    msg.channel.send({
+      content: `📊 **Round 1 Bracket**\n\n${bracket}`,
+      components: [row]
+    });
+
+  }
+
+  /* ===== QUAL ===== */
+
+  if (cmd === "qual") {
+
+    if (!tournament) return;
+
+    const user = msg.mentions.users.first();
+    if (!user) return;
+
+    const match = tournament.matches.find(
+      m => m.p1 === user.id || m.p2 === user.id
+    );
+
+    if (!match) return;
+
+    match.winner = user.id;
+
+    msg.channel.send(`${user.username} qualified.`);
+
+  }
+
+  /* ===== DELETE ===== */
+
+  if (cmd === "del") {
+
+    tournament = null;
+    msg.channel.send("Tournament deleted.");
+
+  }
+
+});
 
 /* ================= BUTTONS ================= */
 
-client.on("interactionCreate",async i=>{
+client.on("interactionCreate", async i => {
 
-if(!i.isButton()) return
+  if (!i.isButton()) return;
 
-/* ===== REGISTER ===== */
+  /* ===== REGISTER ===== */
 
-if(i.customId==="register"){
+  if (i.customId === "register") {
 
-if(!tournament)
-return i.reply({content:"No tournament.",ephemeral:true})
+    if (!tournament)
+      return i.reply({ content: "No tournament.", ephemeral: true });
 
-if(tournament.players.includes(i.user.id))
-return i.reply({content:"Already registered.",ephemeral:true})
+    if (tournament.players.includes(i.user.id))
+      return i.reply({ content: "Already registered.", ephemeral: true });
 
-if(tournament.players.length>=tournament.size)
-return i.reply({content:"Tournament full.",ephemeral:true})
+    if (tournament.players.length >= tournament.size)
+      return i.reply({ content: "Tournament full.", ephemeral: true });
 
-tournament.players.push(i.user.id)
+    tournament.players.push(i.user.id);
 
-const row=new ActionRowBuilder().addComponents(
+    const row = new ActionRowBuilder().addComponents(
 
-new ButtonBuilder()
-.setCustomId("register")
-.setLabel("Register")
-.setEmoji("🎮")
-.setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("register")
+        .setLabel("Register")
+        .setStyle(ButtonStyle.Success),
 
-new ButtonBuilder()
-.setCustomId("playercount")
-.setLabel(`Players ${tournament.players.length}/${tournament.size}`)
-.setStyle(ButtonStyle.Secondary)
-.setDisabled(true)
+      new ButtonBuilder()
+        .setCustomId("playercount")
+        .setLabel(`Players ${tournament.players.length}/${tournament.size}`)
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
 
-)
+    );
 
-await i.update({
-embeds:[tourEmbed()],
-components:[row]
-})
+    await i.update({
+      embeds: [tourEmbed()],
+      components: [row]
+    });
 
-}
+  }
 
-/* ===== ANNOUNCE WINNER BUTTON ===== */
+  /* ===== NEXT ROUND ===== */
 
-if(i.customId==="announce_winner"){
+  if (i.customId === "next_round") {
 
-if(!tournament) return
+    const unfinished = tournament.matches.find(m => !m.winner);
 
-const winner=tournament.matches[0]?.winner
-if(!winner) return
+    if (unfinished)
+      return i.reply({
+        content: "All matches must finish first.",
+        ephemeral: true
+      });
 
-const user=await client.users.fetch(winner)
+    const winners = tournament.matches.map(m => m.winner);
 
-const embed=new EmbedBuilder()
+    if (winners.length === 1)
+      return i.reply({ content: "Final match finished. Announce winner.", ephemeral: true });
 
-.setColor("#FFD700")
-.setTitle("🏆 TOURNAMENT WINNER")
-.setThumbnail(user.displayAvatarURL({dynamic:true,size:1024}))
-.setDescription(`Congratulations <@${winner}>`)
-.setImage(randomImage())
+    tournament.matches = [];
 
-i.channel.send({embeds:[embed]})
+    for (let i2 = 0; i2 < winners.length; i2 += 2) {
 
-tournament=null
+      tournament.matches.push({
+        p1: winners[i2],
+        p2: winners[i2 + 1],
+        winner: null
+      });
 
-}
+    }
 
-})
+    let bracket = "";
+
+    tournament.matches.forEach((m, i2) => {
+
+      bracket += `Match ${i2 + 1}\n<@${m.p1}> vs <@${m.p2 || "BYE"}>\n\n`;
+
+    });
+
+    i.channel.send(`📊 **Next Round**\n\n${bracket}`);
+
+    i.reply({ content: "Next round created.", ephemeral: true });
+
+  }
+
+  /* ===== ANNOUNCE WINNER ===== */
+
+  if (i.customId === "announce_winner") {
+
+    if (!tournament) return;
+
+    const final = tournament.matches[0];
+
+    if (!final.winner)
+      return i.reply({ content: "Final not decided.", ephemeral: true });
+
+    const user = await client.users.fetch(final.winner);
+
+    const embed = new EmbedBuilder()
+      .setColor("#FFD700")
+      .setTitle("🏆 TOURNAMENT WINNER")
+      .setThumbnail(user.displayAvatarURL({ size: 1024, dynamic: true }))
+      .setDescription(`🎉 Congratulations <@${user.id}>`);
+
+    i.channel.send({ embeds: [embed] });
+
+    tournament = null;
+
+  }
+
+});
 
 /* ================= READY ================= */
 
-client.once("ready",()=>{
-console.log(`Bot ready as ${client.user.tag}`)
-})
+client.once("ready", () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
 
-client.login(process.env.TOKEN)
+client.login(process.env.TOKEN);
