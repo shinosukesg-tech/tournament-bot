@@ -108,7 +108,6 @@ msg.channel.send({embeds:[embed]});
 if(cmd==="buy"){
 
 const item = args[0];
-
 if(!item) return msg.reply("Use ;buy item");
 
 let price = 0;
@@ -139,7 +138,7 @@ const embed = new EmbedBuilder()
 Item: **${item}**
 Cost: **${price} <:NoobGems:1479770351473787023>**
 
-Balance: **${get(msg.author.id)}**
+Balance: **${get(msg.author.id)} <:NoobGems:1479770351473787023>**
 `);
 
 msg.channel.send({embeds:[embed]});
@@ -164,12 +163,12 @@ add(user.id,amount);
 msg.channel.send(`
 ${user} received **${amount} <:NoobGems:1479770351473787023>**
 
-Total: **${get(user.id)}**
+Total: **${get(user.id)} <:NoobGems:1479770351473787023>**
 `);
 
 }
 
-/* ===== HISTORY (MOD ONLY) ===== */
+/* ===== HISTORY ===== */
 
 if(cmd==="history"){
 
@@ -181,7 +180,8 @@ return msg.reply("No purchases yet.");
 
 let text = purchaseHistory
 .slice(-10)
-.map(h=>`${h.user} bought **${h.item}** (${h.price})`)
+.reverse()
+.map(h=>`👤 ${h.user} bought **${h.item}** for **${h.price} <:NoobGems:1479770351473787023>**`)
 .join("\n");
 
 const embed = new EmbedBuilder()
