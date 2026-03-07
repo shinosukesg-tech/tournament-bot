@@ -1,10 +1,13 @@
 require("dotenv").config();
 
 /* ================= UPTIME ================= */
+
 const express = require("express");
 const app = express();
-app.get("/", (req, res) => res.send("Alive"));
+
+app.get("/", (req,res)=>res.send("Bot Alive"));
 app.listen(process.env.PORT || 3000);
+
 /* ========================================== */
 
 const {
@@ -13,33 +16,27 @@ GatewayIntentBits,
 EmbedBuilder,
 ActionRowBuilder,
 ButtonBuilder,
-ButtonStyle
+ButtonStyle,
+PermissionsBitField,
+ChannelType
 } = require("discord.js");
 
-const fs = require("fs");
 const { get, add } = require("./gems");
-
-const PREFIX = ";";
 
 const client = new Client({
 intents:[
 GatewayIntentBits.Guilds,
 GatewayIntentBits.GuildMessages,
-GatewayIntentBits.MessageContent
+GatewayIntentBits.MessageContent,
+GatewayIntentBits.GuildMembers
 ]
 });
 
-/* ================= HISTORY ================= */
+const PREFIX = ";";
+const MOD_ROLE = "Moderator";
 
-let history = {};
-
-if(fs.existsSync("./history.json")){
-history = JSON.parse(fs.readFileSync("./history.json"));
-}
-
-function saveHistory(){
-fs.writeFileSync("./history.json",JSON.stringify(history,null,2));
-}
+let welcomeChannel = null;
+let purchaseHistory = [];
 
 /* ================= READY ================= */
 
@@ -57,216 +54,340 @@ if(!msg.content.startsWith(PREFIX)) return;
 const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
 const cmd = args.shift().toLowerCase();
 
-/* ================= SHOP ================= */
+/* ===== WELCOME ===== */
+
+if(cmd==="welcome"){
+
+if(!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
+return msg.reply("Admin only.");
+
+welcomeChannel = msg.channel.id;
+
+msg.channel.send("✅ Welcome system enabled.");
+
+}
+
+/* ===== BALANCE ===== */
+
+if(cmd==="gems"){
+
+const balance = get(msg.author.id) || 0;
+
+msg.reply(`💎 Balance: **${balance} <:NoobGems:1479770351473787023>**`);
+
+}
+
+/* ===== SHOP ===== */
 
 if(cmd==="shop"){
 
-const balance = get(msg.author.id);
+const balance = get(msg.author.id) || 0;
 
 const embed = new EmbedBuilder()
 .setColor("#00ffff")
 .setTitle("🛒 KmGems Shop")
 .setDescription(`
-💎 Balance: **${balance} KmGems**
+Balance: **${balance} <:NoobGems:1479770351473787023>**
 
-Rewards
+VIP Role — 500
+Name Color — 200
+Server Shoutout — 100
 
-1k owo  = 500 KmGems
-5k owo  = 2500 KmGems
-10k owo = 5000 KmGems
-20k owo = 10000 KmGems
-30k owo = 15000 KmGems
-40k owo = 20000 KmGems
-50k owo = 25000 KmGems
-
-Buy with:
-;buy 1k
-;buy 5k
-;buy 10k
-;buy 20k
-;buy 30k
-;buy 40k
-;buy 50k
+Buy using
+;buy vip
+;buy color
+;buy shoutout
 `);
 
 msg.channel.send({embeds:[embed]});
+
 }
 
-/* ================= BUY ================= */
+/* ===== BUY ===== */
 
 if(cmd==="buy"){
 
 const item = args[0];
-if(!item) return msg.reply("Use ;buy 1k / 5k / 10k / 20k / 30k / 40k / 50k");
 
-let price=0;
-let reward="";
+if(!item) return msg.reply("Use ;buy item");
 
-if(item==="1k"){price=500;reward="1k owo";}
-if(item==="5k"){price=2500;reward="5k owo";}
-if(item==="10k"){price=5000;reward="10k owo";}
-if(item==="20k"){price=10000;reward="20k owo";}
-if(item==="30k"){price=15000;reward="30k owo";}
-if(item==="40k"){price=20000;reward="40k owo";}
-if(item==="50k"){price=25000;reward="50k owo";}
+let price = 0;
 
-if(price===0) return msg.reply("❌ Item not found.");
+if(item==="vip") price=500;
+if(item==="color") price=200;
+if(item==="shoutout") price=100;
 
-if(get(msg.author.id) < price)
+if(price===0) return msg.reply("Item not found.");
+
+const balance = get(msg.author.id) || 0;
+
+if(balance < price)
 return msg.reply("❌ Not enough KmGems.");
 
 add(msg.author.id,-price);
 
-/* SAVE HISTORY */
-
-if(!history[msg.author.id]) history[msg.author.id]=[];
-
-history[msg.author.id].push({
-reward:reward,
-price:price,
-date:new Date().toLocaleString()
+purchaseHistory.push({
+user: msg.author.tag,
+item: item,
+price: price
 });
-
-saveHistory();
-
-/* EMBED */
 
 const embed = new EmbedBuilder()
 .setColor("Green")
-.setTitle("🎉 Purchase Successful")
+.setTitle("🛒 Purchase Successful")
 .setDescription(`
-User: ${msg.author}
+Item: **${item}**
+Cost: **${price} <:NoobGems:1479770351473787023>**
 
-Reward: **${reward}**
-
-Cost: **${price} KmGems**
-
-Remaining Balance
-💎 **${get(msg.author.id)} KmGems**
-
-📩 Open a **ticket** and moderator will confirm reward.
+Balance: **${get(msg.author.id)}**
 `);
 
-/* BUTTON */
+msg.channel.send({embeds:[embed]});
 
-const row = new ActionRowBuilder().addComponents(
-new ButtonBuilder()
-.setCustomId(`claim_${reward}_${msg.author.id}`)
-.setLabel("Claim Reward")
-.setStyle(ButtonStyle.Secondary)
-);
-
-msg.channel.send({embeds:[embed],components:[row]});
 }
 
-/* ================= GIVE ================= */
+/* ===== GIVE ===== */
 
 if(cmd==="give"){
 
-if(!msg.member.permissions.has("Administrator"))
-return msg.reply("Admin only command.");
+if(!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
+return msg.reply("Admin only.");
 
 const amount = parseInt(args[0]);
 const user = msg.mentions.users.first();
 
 if(!amount || !user)
-return msg.reply("Usage: ;give 500 @user");
+return msg.reply("Use ;give amount @user");
 
 add(user.id,amount);
 
-msg.channel.send(`💎 Added **${amount} KmGems** to ${user}`);
+msg.channel.send(`
+${user} received **${amount} <:NoobGems:1479770351473787023>**
+
+Total: **${get(user.id)}**
+`);
+
 }
 
-/* ================= HISTORY ================= */
+/* ===== HISTORY (MOD ONLY) ===== */
 
 if(cmd==="history"){
 
-if(msg.author.id !== msg.guild.ownerId)
-return msg.reply("Only server owner can use this.");
+if(!msg.member.roles.cache.some(r=>r.name===MOD_ROLE))
+return msg.reply("Moderator only.");
 
-const user = msg.mentions.users.first();
+if(purchaseHistory.length === 0)
+return msg.reply("No purchases yet.");
 
-if(!user) return msg.reply("Mention user.");
-
-if(!history[user.id] || history[user.id].length===0)
-return msg.reply("No purchase history.");
-
-let text="";
-
-history[user.id].forEach(h=>{
-text += `Reward: ${h.reward} | Cost: ${h.price} KmGems | ${h.date}\n`;
-});
+let text = purchaseHistory
+.slice(-10)
+.map(h=>`${h.user} bought **${h.item}** (${h.price})`)
+.join("\n");
 
 const embed = new EmbedBuilder()
-.setColor("Gold")
+.setColor("Orange")
 .setTitle("🧾 Purchase History")
-.setDescription(`User: ${user}\n\n${text}`);
+.setDescription(text);
 
 msg.channel.send({embeds:[embed]});
+
+}
+
+/* ===== OWO EXCHANGE ===== */
+
+if(cmd==="owo"){
+
+const embed = new EmbedBuilder()
+.setColor("#2f3136")
+.setTitle("💰 OWO → KmGems Exchange")
+.setDescription(`
+1k OWO = 500 <:NoobGems:1479770351473787023>
+10k OWO = 5000 <:NoobGems:1479770351473787023>
+20k OWO = 10000 <:NoobGems:1479770351473787023>
+30k OWO = 15000 <:NoobGems:1479770351473787023>
+40k OWO = 20000 <:NoobGems:1479770351473787023>
+50k OWO = 25000 <:NoobGems:1479770351473787023>
+
+Open ticket after selecting
+`);
+
+const row = new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("owo1")
+.setLabel("1k OWO")
+.setStyle(ButtonStyle.Secondary),
+
+new ButtonBuilder()
+.setCustomId("owo10")
+.setLabel("10k OWO")
+.setStyle(ButtonStyle.Secondary),
+
+new ButtonBuilder()
+.setCustomId("owo20")
+.setLabel("20k OWO")
+.setStyle(ButtonStyle.Secondary),
+
+new ButtonBuilder()
+.setCustomId("owo50")
+.setLabel("50k OWO")
+.setStyle(ButtonStyle.Secondary)
+
+);
+
+msg.channel.send({embeds:[embed],components:[row]});
+
+}
+
+/* ===== TICKET PANEL ===== */
+
+if(cmd==="ticketpanel"){
+
+const embed = new EmbedBuilder()
+.setColor("#2f3136")
+.setTitle("🎟 Ticket Panel")
+.setDescription(`
+Support
+Apply
+Reward
+`);
+
+const row = new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("ticket_support")
+.setLabel("Support")
+.setStyle(ButtonStyle.Primary),
+
+new ButtonBuilder()
+.setCustomId("ticket_apply")
+.setLabel("Apply")
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("ticket_reward")
+.setLabel("Reward")
+.setStyle(ButtonStyle.Secondary)
+
+);
+
+msg.channel.send({embeds:[embed],components:[row]});
+
 }
 
 });
 
-/* ================= BUTTON HANDLER ================= */
+/* ================= WELCOME EVENT ================= */
+
+client.on("guildMemberAdd", member=>{
+
+if(!welcomeChannel) return;
+
+const channel = member.guild.channels.cache.get(welcomeChannel);
+if(!channel) return;
+
+const embed = new EmbedBuilder()
+.setColor("#8e44ad")
+.setTitle(`Welcome ${member.user.username}`)
+.setThumbnail(member.user.displayAvatarURL({size:512}))
+.setDescription(`User ID: ${member.id}`)
+.setTimestamp();
+
+channel.send({embeds:[embed]});
+
+});
+
+/* ================= BUTTON SYSTEM ================= */
 
 client.on("interactionCreate", async interaction=>{
 
-try{
-
 if(!interaction.isButton()) return;
 
-if(interaction.customId.startsWith("claim_")){
+/* ===== OWO BUTTON ===== */
 
-const data = interaction.customId.split("_");
+if(interaction.customId.startsWith("owo")){
 
-const reward = data[1];
-const buyerID = data[2];
-
-/* MODERATOR CHECK */
-
-if(!interaction.member.permissions.has("ManageMessages")){
-return interaction.reply({
-content:"❌ Only moderators can confirm rewards inside tickets.",
+await interaction.reply({
+content:`Open a **reward ticket** to receive your KmGems.`,
 ephemeral:true
 });
+
 }
 
-/* SUCCESS */
+/* ===== CREATE TICKET ===== */
 
-const embed = new EmbedBuilder()
-.setColor("Green")
-.setTitle("✅ Reward Delivered")
-.setDescription(`
-Moderator: ${interaction.user}
+if(
+interaction.customId==="ticket_support" ||
+interaction.customId==="ticket_apply" ||
+interaction.customId==="ticket_reward"
+){
 
-User: <@${buyerID}>
+const type = interaction.customId.split("_")[1];
 
-Reward Delivered:
-**${reward}**
-`);
-
-await interaction.update({
-embeds:[embed],
-components:[]
+const channel = await interaction.guild.channels.create({
+name:`${type}-${interaction.user.username}`,
+type:ChannelType.GuildText,
+permissionOverwrites:[
+{
+id:interaction.guild.id,
+deny:[PermissionsBitField.Flags.ViewChannel]
+},
+{
+id:interaction.user.id,
+allow:[
+PermissionsBitField.Flags.ViewChannel,
+PermissionsBitField.Flags.SendMessages
+]
+}
+]
 });
 
-}
+const row = new ActionRowBuilder().addComponents(
 
-}catch(err){
+new ButtonBuilder()
+.setCustomId("claim_ticket")
+.setLabel("Claim")
+.setStyle(ButtonStyle.Success),
 
-console.error("Button Error:",err);
+new ButtonBuilder()
+.setCustomId("close_ticket")
+.setLabel("Close")
+.setStyle(ButtonStyle.Danger)
 
-if(!interaction.replied){
-interaction.reply({
-content:"❌ Button error occurred.",
+);
+
+await channel.send({
+content:`Ticket opened by ${interaction.user}`,
+components:[row]
+});
+
+await interaction.reply({
+content:`Ticket created: ${channel}`,
 ephemeral:true
-}).catch(()=>{});
+});
+
 }
+
+/* ===== CLAIM ===== */
+
+if(interaction.customId==="claim_ticket"){
+
+await interaction.reply(`✅ Ticket claimed by ${interaction.user}`);
+
+}
+
+/* ===== CLOSE ===== */
+
+if(interaction.customId==="close_ticket"){
+
+await interaction.reply("Closing ticket in 5 seconds...");
+
+setTimeout(()=>{
+interaction.channel.delete().catch(()=>{});
+},5000);
 
 }
 
 });
-
-/* ================= LOGIN ================= */
 
 client.login(process.env.TOKEN);
