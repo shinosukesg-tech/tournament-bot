@@ -1,4 +1,4 @@
-require("dotenv").config()
+require("dotenv").config();
 
 /* ================= UPTIME ================= */
 
@@ -15,359 +15,329 @@ GatewayIntentBits,
 EmbedBuilder,
 ActionRowBuilder,
 ButtonBuilder,
-ButtonStyle
-} = require("discord.js")
+ButtonStyle,
+PermissionsBitField,
+ChannelType
+} = require("discord.js");
 
 const client = new Client({
 intents:[
 GatewayIntentBits.Guilds,
 GatewayIntentBits.GuildMessages,
-GatewayIntentBits.MessageContent,
-GatewayIntentBits.GuildMembers
-]})
-
-const PREFIX=";"
-const SERVER_NAME="ShinosukeSG"
-
-/* ================= CUSTOM EMOJIS ================= */
-
-const VS = "<:VS:1477014161484677150>"
-const TICK = "<:TICK:1467892699578236998>"
-
-/* ================= TOURNAMENT IMAGES ================= */
-
-const TOUR_IMAGES=[
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png",
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png",
-"https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png"
+GatewayIntentBits.GuildMembers,
+GatewayIntentBits.MessageContent
 ]
+});
 
-function randomImage(){
-return TOUR_IMAGES[Math.floor(Math.random()*TOUR_IMAGES.length)]
-}
+const PREFIX = "!";
+const TICK = "<:TICK:1467892699578236998>";
+const VS = "<:VS:1477014161484677150>";
 
 /* ================= TOURNAMENT DATA ================= */
 
-let tournament=null
-
-/* ================= AUTO WELCOME ================= */
-
-function accountAge(date){
-return Math.floor((Date.now()-date.getTime())/86400000)+" days"
-}
-
-client.on("guildMemberAdd",async member=>{
-
-const channel=member.guild.channels.cache.find(c=>c.name.includes("welcome"))
-if(!channel) return
-
-const embed=new EmbedBuilder()
-
-.setColor("#8b5cf6")
-.setTitle(`Welcome ${member.user.username} 👋`)
-.setThumbnail(member.user.displayAvatarURL({dynamic:true}))
-.setDescription(`Welcome **${member.user.username}** to 🏆 **${SERVER_NAME}**\nHave fun here!`)
-.addFields(
-{name:"🆔 User ID",value:member.id},
-{name:"📅 Account Created",value:member.user.createdAt.toDateString()},
-{name:"⏳ Account Age",value:accountAge(member.user.createdAt)},
-{name:"🎭 Display Name",value:member.displayName}
-)
-
-channel.send({
-content:`Welcome <@${member.id}>`,
-embeds:[embed]
-})
-
-})
-
-/* ================= COMMAND HANDLER ================= */
-
-client.on("messageCreate",async msg=>{
-
-if(msg.author.bot) return
-if(!msg.content.startsWith(PREFIX)) return
-
-const args=msg.content.slice(PREFIX.length).split(" ")
-const cmd=args.shift().toLowerCase()
-
-/* ===== CREATE TOURNAMENT ===== */
-
-if(cmd==="1v1"){
-
-let size=parseInt(args[0])
-let server=args[1]
-let map=args[2]
-
-let img=randomImage()
-
-tournament={
-size,
-server,
-map,
+let tour = {
 players:[],
 matches:[],
-image:img,
-round:1
-}
-
-const embed=new EmbedBuilder()
-
-.setColor("Red")
-.setTitle(`🏆 ${SERVER_NAME} Tournament`)
-.setImage(img)
-.setDescription(`
-🎮 Mode: 1v1
-🌍 Server: ${server}
-🗺 Map: ${map}
-
-👥 Players: 0/${size}
-`)
-
-const row=new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("register")
-.setLabel("Register")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("count")
-.setLabel("Players 0/"+size)
-.setStyle(ButtonStyle.Secondary)
-.setDisabled(true)
-
-)
-
-msg.channel.send({embeds:[embed],components:[row]})
-
-}
-
-/* ===== START TOURNAMENT ===== */
-
-if(cmd==="start"){
-
-if(!tournament) return msg.reply("No tournament running")
-
-let shuffled=[...tournament.players].sort(()=>Math.random()-0.5)
-
-tournament.matches=[]
-
-for(let i=0;i<shuffled.length;i+=2){
-
-tournament.matches.push({
-p1:shuffled[i],
-p2:shuffled[i+1]||null,
-winner:null
-})
-
-}
-
-sendBracket(msg.channel)
-
-}
-
-/* ===== QUALIFY PLAYER ===== */
-
-if(cmd==="qual"){
-
-if(!tournament) return
-
-if(args[0]==="bye1"){
-
-let match=tournament.matches.find(m=>!m.p2)
-
-if(match){
-
-match.winner=match.p1
-msg.channel.send(`${TICK} BYE player advanced`)
-
-}
-
-return
-}
-
-let user=msg.mentions.users.first()
-if(!user) return
-
-let match=tournament.matches.find(m=>m.p1===user.id||m.p2===user.id)
-
-if(match){
-
-match.winner=user.id
-msg.channel.send(`${TICK} ${user.username} qualified`)
-
-}
-
-}
-
-/* ===== BYE ADVANCE ===== */
-
-if(cmd==="bye"){
-
-if(!tournament) return
-
-tournament.matches.forEach(m=>{
-if(!m.p2) m.winner=m.p1
-})
-
-msg.channel.send(`${TICK} BYE players advanced`)
-
-}
-
-/* ===== ROOM CODE ===== */
-
-if(cmd==="code"){
-
-let room=args[0]
-let user=msg.mentions.users.first()
-
-if(!room||!user) return msg.reply("Usage: ;code ROOMCODE @player")
-
-const embed=new EmbedBuilder()
-
-.setColor("Green")
-.setTitle("Match Room")
-.setDescription(`ROOM CODE\n\`\`\`\n${room}\n\`\`\``)
-
-user.send({embeds:[embed]}).catch(()=>{})
-
-msg.channel.send(`${TICK} Room code sent`)
-
-}
-
-})
-
-/* ================= BRACKET FUNCTION ================= */
-
-function sendBracket(channel){
-
-let text=""
-
-tournament.matches.forEach((m,i)=>{
-
-text+=`**Match ${i+1}**\n<@${m.p1}> ${VS} ${m.p2?`<@${m.p2}>`:"BYE"}\n\n`
-
-})
-
-const embed=new EmbedBuilder()
-
-.setColor("Blue")
-.setTitle(`Round ${tournament.round}`)
-.setDescription(text)
-
-const row=new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("next")
-.setLabel("Next Round")
-.setStyle(ButtonStyle.Primary)
-
-)
-
-channel.send({embeds:[embed],components:[row]})
-
-}
-
-/* ================= BUTTONS ================= */
-
-client.on("interactionCreate",async i=>{
-
-if(!i.isButton()) return
-
-/* ===== REGISTER ===== */
-
-if(i.customId==="register"){
-
-if(!tournament)
-return i.reply({content:"No tournament running",ephemeral:true})
-
-if(tournament.players.includes(i.user.id))
-return i.reply({content:"Already registered",ephemeral:true})
-
-tournament.players.push(i.user.id)
-
-const embed=new EmbedBuilder()
-
-.setColor("Red")
-.setTitle(`🏆 ${SERVER_NAME} Tournament`)
-.setImage(tournament.image)
-.setDescription(`
-🎮 Mode: 1v1
-🌍 Server: ${tournament.server}
-🗺 Map: ${tournament.map}
-
-👥 Players: ${tournament.players.length}/${tournament.size}
-`)
-
-const row=new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("register")
-.setLabel("Register")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("count")
-.setLabel(`Players ${tournament.players.length}/${tournament.size}`)
-.setStyle(ButtonStyle.Secondary)
-.setDisabled(true)
-
-)
-
-i.update({embeds:[embed],components:[row]})
-
-}
-
-/* ===== NEXT ROUND ===== */
-
-if(i.customId==="next"){
-
-let unfinished=tournament.matches.find(m=>!m.winner)
-
-if(unfinished)
-return i.reply({content:"Finish all matches first",ephemeral:true})
-
-let winners=tournament.matches.map(m=>m.winner)
-
-if(winners.length===1){
-
-const embed=new EmbedBuilder()
-
-.setColor("Gold")
-.setTitle("🏆 Tournament Winner")
-.setDescription(`${TICK} Winner: <@${winners[0]}>`)
-
-return i.channel.send({embeds:[embed]})
-
-}
-
-tournament.round++
-
-tournament.matches=[]
-
-for(let x=0;x<winners.length;x+=2){
-
-tournament.matches.push({
-p1:winners[x],
-p2:winners[x+1]||null,
-winner:null
-})
-
-}
-
-sendBracket(i.channel)
-
-i.reply({content:"Next round created",ephemeral:true})
-
-}
-
-})
+started:false,
+info:{}
+};
 
 /* ================= READY ================= */
 
 client.once("ready",()=>{
-console.log(`Logged in as ${client.user.tag}`)
-})
+console.log(`Logged in as ${client.user.tag}`);
+});
 
-client.login(process.env.TOKEN)
+/* ================= WELCOME ================= */
+
+client.on("guildMemberAdd", member=>{
+const ch = member.guild.systemChannel;
+if(!ch) return;
+
+const embed = new EmbedBuilder()
+.setTitle("WELCOME")
+.setDescription(`Welcome ${member}`)
+.setThumbnail(member.user.displayAvatarURL())
+.setColor("Green");
+
+ch.send({embeds:[embed]});
+});
+
+/* ================= COMMANDS ================= */
+
+client.on("messageCreate", async message=>{
+
+if(message.author.bot) return;
+if(!message.content.startsWith(PREFIX)) return;
+
+const args = message.content.slice(PREFIX.length).split(/ +/);
+const cmd = args.shift().toLowerCase();
+
+/* ================= TICKET PANEL ================= */
+
+if(cmd === "ticketpanel"){
+
+if(!message.member.roles.cache.some(r=>r.name==="Moderator"))
+return message.reply("Moderator only");
+
+const embed = new EmbedBuilder()
+.setTitle("🎫 Ticket System")
+.setDescription(`
+Select an option below:
+
+🛡 Support → Need help or have a question
+📋 Apply → Apply to become staff
+🎁 Reward → Claim your reward
+`)
+.setImage("https://media.discordapp.net/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png")
+.setColor("#5865F2");
+
+const row = new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("support")
+.setLabel("Support")
+.setEmoji("🛡")
+.setStyle(ButtonStyle.Danger),
+
+new ButtonBuilder()
+.setCustomId("apply")
+.setLabel("Apply")
+.setEmoji("📋")
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("reward")
+.setLabel("Reward")
+.setEmoji("🎁")
+.setStyle(ButtonStyle.Primary)
+
+);
+
+message.channel.send({embeds:[embed],components:[row]});
+}
+
+/* ================= REGISTER ================= */
+
+if(cmd === "register"){
+
+if(tour.started) return;
+
+if(!tour.players.includes(message.author.id)){
+tour.players.push(message.author.id);
+message.reply("Registered");
+}
+
+}
+
+/* ================= TOURNAMENT ================= */
+
+if(cmd === "tour"){
+
+if(!message.member.roles.cache.some(r=>r.name==="Tournament Hoster"))
+return message.reply("Tournament Hoster only");
+
+const players = args[0];
+const server = args[1];
+const map = args[2];
+const reward = args.slice(3).join(" ");
+
+tour.info = {players,server,map,reward};
+
+const embed = new EmbedBuilder()
+.setTitle("ShinTours Tournament")
+.setDescription(`
+Players: **${players}**
+Server: **${server}**
+Map: **${map}**
+Reward: **${reward}**
+
+Type **!register** to join
+`)
+.setColor("Blue");
+
+message.channel.send({embeds:[embed]});
+}
+
+/* ================= START ================= */
+
+if(cmd === "start"){
+
+tour.started = true;
+
+let shuffled = tour.players.sort(()=>Math.random()-0.5);
+
+for(let i=0;i<shuffled.length;i+=2){
+
+tour.matches.push({
+p1:shuffled[i],
+p2:shuffled[i+1] || null,
+winner:null
+});
+
+}
+
+sendBracket(message.channel);
+}
+
+/* ================= QUALIFY ================= */
+
+if(cmd === "qual"){
+
+const user = message.mentions.users.first();
+if(!user) return;
+
+let match = tour.matches.find(
+m=>m.p1===user.id || m.p2===user.id
+);
+
+if(match){
+match.winner=user.id;
+message.channel.send(`${TICK} ${user.username} qualified`);
+}
+
+}
+
+});
+
+/* ================= BRACKET ================= */
+
+function sendBracket(channel){
+
+let text="";
+
+tour.matches.forEach((m,i)=>{
+
+let t1 = m.winner===m.p1?` ${TICK}`:"";
+let t2 = m.winner===m.p2?` ${TICK}`:"";
+
+text+=`Match ${i+1}
+<@${m.p1}>${t1} ${VS} <@${m.p2}>${t2}
+
+`;
+
+});
+
+const embed = new EmbedBuilder()
+.setTitle("Tournament Bracket")
+.setDescription(text)
+.setColor("Blue");
+
+const row = new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("next_round")
+.setLabel("Next Round")
+.setStyle(ButtonStyle.Success)
+
+);
+
+channel.send({embeds:[embed],components:[row]});
+}
+
+/* ================= BUTTONS ================= */
+
+client.on("interactionCreate", async interaction=>{
+
+if(!interaction.isButton()) return;
+
+/* ================= NEXT ROUND ================= */
+
+if(interaction.customId==="next_round"){
+
+if(tour.matches.some(m=>!m.winner))
+return interaction.reply({content:"Matches unfinished",ephemeral:true});
+
+let winners = tour.matches.map(m=>m.winner);
+
+if(winners.length===1){
+
+const winner = await client.users.fetch(winners[0]);
+
+const embed = new EmbedBuilder()
+.setTitle("🏆 TOURNAMENT WINNER")
+.setDescription(`${winner}`)
+.setThumbnail(winner.displayAvatarURL({size:512}))
+.setImage(winner.displayAvatarURL({size:1024}))
+.setColor("Gold");
+
+interaction.channel.send({embeds:[embed]});
+
+tour={players:[],matches:[],started:false,info:{}};
+return;
+}
+
+tour.matches=[];
+
+for(let i=0;i<winners.length;i+=2){
+
+tour.matches.push({
+p1:winners[i],
+p2:winners[i+1]||null,
+winner:null
+});
+
+}
+
+sendBracket(interaction.channel);
+
+interaction.reply({content:"Next round created",ephemeral:true});
+
+}
+
+/* ================= TICKET BUTTONS ================= */
+
+if(["support","apply","reward"].includes(interaction.customId)){
+
+const name = interaction.user.username;
+
+const ch = await interaction.guild.channels.create({
+name:`ticket-${name}`,
+type:ChannelType.GuildText,
+permissionOverwrites:[
+{
+id:interaction.guild.id,
+deny:[PermissionsBitField.Flags.ViewChannel]
+},
+{
+id:interaction.user.id,
+allow:[
+PermissionsBitField.Flags.ViewChannel,
+PermissionsBitField.Flags.SendMessages
+]
+},
+{
+id:interaction.guild.roles.cache.find(r=>r.name==="Moderator").id,
+allow:[PermissionsBitField.Flags.ViewChannel]
+}
+]
+});
+
+const close = new ActionRowBuilder().addComponents(
+new ButtonBuilder()
+.setCustomId("close_ticket")
+.setLabel("Close Ticket")
+.setStyle(ButtonStyle.Danger)
+);
+
+ch.send({
+content:`${interaction.user} ticket opened`,
+components:[close]
+});
+
+interaction.reply({content:`Ticket created ${ch}`,ephemeral:true});
+}
+
+/* ================= CLOSE ================= */
+
+if(interaction.customId==="close_ticket"){
+
+interaction.channel.delete();
+
+}
+
+});
+
+/* ================= LOGIN ================= */
+
+client.login(process.env.TOKEN);
