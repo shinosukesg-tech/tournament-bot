@@ -85,6 +85,20 @@ if(cmd === "code"){
 return message.reply("Tournament Code: **1234-5678-9012**")
 }
 
+/* ---- BYE COMMAND (NEW) ---- */
+
+if(cmd === "bye"){
+
+if(!players.includes(message.author.id)){
+return message.reply("You are not in the tournament.")
+}
+
+players = players.filter(id => id !== message.author.id)
+
+return message.reply("You left the tournament.")
+
+}
+
 /* ---- TOURNAMENT ---- */
 
 if(cmd === "1v1"){
