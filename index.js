@@ -8,7 +8,6 @@ const app = express();
 app.get("/", (req,res)=>res.send("Bot Alive"));
 app.listen(process.env.PORT || 3000);
 
-
 /* ================= DISCORD ================= */
 
 const {
@@ -31,119 +30,239 @@ GatewayIntentBits.GuildMembers
 ]
 });
 
-const PREFIX = ";"
+const PREFIX=";"
 
 /* ================= IMAGES ================= */
 
-const REGISTER_IMAGE = "https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
-const BRACKET_IMAGE = "https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
-const WINNER_IMAGE = "https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
-const TICKET_IMAGE = "https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png"
+const REGISTER_IMAGES=[
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
+]
 
-/* ================= TOURNAMENT DATA ================= */
+const BRACKET_IMAGES=[
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
+]
 
-let players = []
-let bracket = []
-let currentMatch = 0
+const WINNER_IMAGES=[
+"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
+]
+
+const TICKET_IMAGE="https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
+
+function random(arr){
+return arr[Math.floor(Math.random()*arr.length)]
+}
+
+/* ================= DATA ================= */
+
+let players=[]
+let bracket=[]
+let currentMatch=0
 
 /* ================= READY ================= */
 
-client.on("ready", ()=>{
+client.on("ready",()=>{
 console.log(`Logged in as ${client.user.tag}`)
 })
 
 /* ================= WELCOME ================= */
 
-client.on("guildMemberAdd", member => {
+client.on("guildMemberAdd",member=>{
 
-const channel = member.guild.systemChannel
+const channel=member.guild.channels.cache.find(c=>c.name.includes("welcome"))
 if(!channel) return
 
-const embed = new EmbedBuilder()
-.setTitle("Welcome!")
-.setDescription(`Welcome ${member} to **${member.guild.name}**`)
-.setImage(REGISTER_IMAGE)
-.setColor("Green")
+const created=`<t:${Math.floor(member.user.createdTimestamp/1000)}:D>`
+const age=Math.floor((Date.now()-member.user.createdTimestamp)/86400000)
 
-channel.send({embeds:[embed]})
+const embed=new EmbedBuilder()
+.setTitle(`Welcome\n${member.user.username}`)
+.setDescription(`👋
+
+Welcome **${member.user.username}** to
+🏆 **${member.guild.name}**
+Have fun here!
+
+🆔 **User ID**
+${member.id}
+
+📅 **Account Created**
+${created}
+
+⏳ **Account Age**
+${age} days
+
+🎭 **Display Name**
+${member.displayName}`)
+.setThumbnail(member.user.displayAvatarURL({dynamic:true}))
+.setColor("Purple")
+
+channel.send({content:`Welcome ${member}`,embeds:[embed]})
 
 })
 
 /* ================= COMMANDS ================= */
 
-client.on("messageCreate", async message => {
+client.on("messageCreate",async message=>{
 
 if(message.author.bot) return
 if(!message.content.startsWith(PREFIX)) return
 
-const args = message.content.slice(PREFIX.length).trim().split(/ +/)
-const cmd = args.shift().toLowerCase()
+const args=message.content.slice(PREFIX.length).trim().split(/ +/)
+const cmd=args.shift().toLowerCase()
 
-/* ---- CODE ---- */
+/* ================= CODE DM COMMAND ================= */
 
-if(cmd === "code"){
-return message.reply("Tournament Code: **1234-5678-9012**")
+if(cmd==="code"){
+
+const code=args[0]
+const users=message.mentions.users
+
+if(!code) return message.reply("Provide code.")
+if(users.size<1) return message.reply("Mention players.")
+
+const embed=new EmbedBuilder()
+.setTitle("🏆 Tournament Match Code")
+.setDescription(`🎮 Your match code:
+
+\`\`\`${code}\`\`\`
+
+Good luck in your match! 🍀`)
+.setColor("Gold")
+
+users.forEach(async user=>{
+
+try{
+await user.send({embeds:[embed]})
+}catch{
+console.log(`Couldn't DM ${user.username}`)
 }
 
-/* ---- BYE COMMAND (NEW) ---- */
+})
 
-if(cmd === "bye"){
-
-if(!players.includes(message.author.id)){
-return message.reply("You are not in the tournament.")
-}
-
-players = players.filter(id => id !== message.author.id)
-
-return message.reply("You left the tournament.")
+message.reply("📩 Code sent to players DM.")
 
 }
 
-/* ---- TOURNAMENT ---- */
+/* ================= CREATE TOURNAMENT ================= */
 
-if(cmd === "1v1"){
+if(cmd==="1v1"){
 
-players = []
-bracket = []
-currentMatch = 0
+players=[]
+bracket=[]
+currentMatch=0
 
-const embed = new EmbedBuilder()
-.setTitle("1v1 Tournament")
-.setDescription("Click Register to join\n\nPlayers: **0**")
-.setImage(REGISTER_IMAGE)
-.setColor("Blue")
+const embed=new EmbedBuilder()
+.setTitle("🏆 Tournament")
+.setDescription(`🎮 Mode: 1v1
+👥 Players: **0**
+Status: **OPEN**`)
+.setImage(random(REGISTER_IMAGES))
+.setColor("Red")
 
-const row = new ActionRowBuilder().addComponents(
+const row=new ActionRowBuilder().addComponents(
+
 new ButtonBuilder()
 .setCustomId("register")
 .setLabel("Register")
 .setStyle(ButtonStyle.Success),
 
 new ButtonBuilder()
-.setCustomId("start")
-.setLabel("Start")
-.setStyle(ButtonStyle.Primary)
+.setCustomId("unregister")
+.setLabel("Unregister")
+.setStyle(ButtonStyle.Danger)
+
 )
 
 message.channel.send({embeds:[embed],components:[row]})
 
 }
 
-/* ---- TICKET PANEL ---- */
+/* ================= BYE ================= */
 
-if(cmd === "ticketpanel"){
+if(cmd==="bye"){
+players.push("BYE")
+message.reply("BYE slot added.")
+}
 
-const embed = new EmbedBuilder()
-.setTitle("Support Tickets")
-.setDescription("Click button to open ticket")
+/* ================= QUALIFIER ================= */
+
+if(cmd==="qual"){
+
+if(args[0]!=="bye1") return
+
+const user=message.mentions.users.first()
+if(!user) return message.reply("Mention user.")
+
+players.push(user.id)
+
+message.reply(`${user.username} added as qualifier.`)
+
+}
+
+/* ================= START ================= */
+
+if(cmd==="start"){
+
+if(players.length<2)
+return message.reply("Need at least 2 players.")
+
+players.sort(()=>Math.random()-0.5)
+
+for(let i=0;i<players.length;i+=2){
+bracket.push([players[i],players[i+1]])
+}
+
+let desc=""
+
+for(const match of bracket){
+
+let p1=match[0]==="BYE"?"BYE":(await client.users.fetch(match[0])).username
+let p2=match[1]==="BYE"?"BYE":(await client.users.fetch(match[1])).username
+
+desc+=`**${p1}** <:VS:1477014161484677150> **${p2}**\n`
+}
+
+const embed=new EmbedBuilder()
+.setTitle("🏆 Tournament Bracket")
+.setDescription(desc)
+.setImage(random(BRACKET_IMAGES))
+.setColor("Blue")
+
+message.channel.send({embeds:[embed]})
+
+}
+
+/* ================= TICKET PANEL ================= */
+
+if(cmd==="ticketpanel"){
+
+const embed=new EmbedBuilder()
+.setTitle("🎫 Ticket System")
+.setDescription(`Select an option below:
+
+🛡 **Support** → Need help or have a question
+📋 **Apply** → Apply to become staff
+🎁 **Reward** → Claim your reward`)
 .setImage(TICKET_IMAGE)
-.setColor("Green")
+.setColor("Blue")
 
-const row = new ActionRowBuilder().addComponents(
+const row=new ActionRowBuilder().addComponents(
+
 new ButtonBuilder()
-.setCustomId("create_ticket")
-.setLabel("Create Ticket")
-.setStyle(ButtonStyle.Success)
+.setCustomId("support_ticket")
+.setLabel("🛡 Support")
+.setStyle(ButtonStyle.Danger),
+
+new ButtonBuilder()
+.setCustomId("apply_ticket")
+.setLabel("📋 Apply")
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("reward_ticket")
+.setLabel("🎁 Reward")
+.setStyle(ButtonStyle.Primary)
+
 )
 
 message.channel.send({embeds:[embed],components:[row]})
@@ -154,110 +273,42 @@ message.channel.send({embeds:[embed],components:[row]})
 
 /* ================= BUTTONS ================= */
 
-client.on("interactionCreate", async interaction => {
+client.on("interactionCreate",async interaction=>{
 
 if(!interaction.isButton()) return
 
-/* ---- REGISTER ---- */
+/* REGISTER */
 
-if(interaction.customId === "register"){
+if(interaction.customId==="register"){
 
-if(players.includes(interaction.user.id)){
-return interaction.reply({content:"You already joined!",ephemeral:true})
-}
+if(players.includes(interaction.user.id))
+return interaction.reply({content:"Already registered.",ephemeral:true})
 
 players.push(interaction.user.id)
 
-const embed = new EmbedBuilder()
-.setTitle("1v1 Tournament")
-.setDescription(`Click Register to join\n\nPlayers: **${players.length}**`)
-.setImage(REGISTER_IMAGE)
-
-await interaction.update({embeds:[embed]})
+interaction.reply({content:"Registered!",ephemeral:true})
 
 }
 
-/* ---- START BRACKET ---- */
+/* UNREGISTER */
 
-if(interaction.customId === "start"){
+if(interaction.customId==="unregister"){
 
-if(players.length < 2){
-return interaction.reply({content:"Need at least 2 players",ephemeral:true})
-}
+players=players.filter(p=>p!==interaction.user.id)
 
-players.sort(()=>Math.random()-0.5)
-
-for(let i=0;i<players.length;i+=2){
-bracket.push([players[i],players[i+1]])
-}
-
-let desc = ""
-
-for(const match of bracket){
-
-const p1 = await client.users.fetch(match[0])
-const p2 = await client.users.fetch(match[1])
-
-desc += `${p1} <:VS:1477014161484677150> ${p2}\n`
-}
-
-const embed = new EmbedBuilder()
-.setTitle("Tournament Bracket")
-.setDescription(desc)
-.setImage(BRACKET_IMAGE)
-
-const row = new ActionRowBuilder().addComponents(
-new ButtonBuilder()
-.setCustomId("next_round")
-.setLabel("Next Round")
-.setStyle(ButtonStyle.Primary)
-)
-
-interaction.update({embeds:[embed],components:[row]})
+interaction.reply({content:"Unregistered.",ephemeral:true})
 
 }
 
-/* ---- NEXT ROUND ---- */
+/* CREATE TICKETS */
 
-if(interaction.customId === "next_round"){
+if(
+interaction.customId==="support_ticket" ||
+interaction.customId==="apply_ticket" ||
+interaction.customId==="reward_ticket"
+){
 
-currentMatch++
-
-if(currentMatch >= bracket.length){
-
-const winnerID = bracket[bracket.length-1][0]
-const winner = await client.users.fetch(winnerID)
-
-const embed = new EmbedBuilder()
-.setTitle("Tournament Winner")
-.setDescription(`<:TICK:1467892699578236998> ${winner}`)
-.setThumbnail(winner.displayAvatarURL())
-.setImage(WINNER_IMAGE)
-.setColor("Gold")
-
-return interaction.update({embeds:[embed],components:[]})
-
-}
-
-const match = bracket[currentMatch]
-
-const p1 = await client.users.fetch(match[0])
-const p2 = await client.users.fetch(match[1])
-
-const embed = new EmbedBuilder()
-.setTitle("Next Match")
-.setDescription(`${p1} <:VS:1477014161484677150> ${p2}`)
-.setImage(BRACKET_IMAGE)
-
-interaction.update({embeds:[embed]})
-
-}
-
-/* ---- CREATE TICKET ---- */
-
-if(interaction.customId === "create_ticket"){
-
-const channel = await interaction.guild.channels.create({
+const channel=await interaction.guild.channels.create({
 name:`ticket-${interaction.user.username}`,
 type:ChannelType.GuildText,
 permissionOverwrites:[
@@ -275,10 +326,10 @@ PermissionsBitField.Flags.SendMessages
 ]
 })
 
-channel.send(`Hello ${interaction.user}, support will be with you soon.`)
+channel.send(`Hello ${interaction.user}, staff will assist you.`)
 
 interaction.reply({
-content:`Your ticket: ${channel}`,
+content:`Ticket created: ${channel}`,
 ephemeral:true
 })
 
