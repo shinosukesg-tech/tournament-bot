@@ -8,9 +8,9 @@ const app = express();
 app.get("/", (req,res)=>res.send("Bot Alive"));
 app.listen(process.env.PORT || 3000);
 
-/* ================= DISCORD ================= */
+process.on("unhandledRejection", console.error);
 
-require("dotenv").config()
+/* ================= DISCORD ================= */
 
 const {
 Client,
@@ -43,18 +43,16 @@ const TICK="<:TICK:1467892699578236998>"
 
 const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png"
 
-const BRACKET_IMAGES=[
-"https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
-]
-
 const TICKET_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
 
 /* ================= DATA ================= */
 
 let players=[]
 let matches=[]
-let winners=[]
-let byeFill=false
+let maxPlayers=0
+let mapName=""
+let serverName=""
+let prize=""
 
 /* ================= READY ================= */
 
@@ -62,7 +60,7 @@ client.on("ready",()=>{
 console.log(`Logged in as ${client.user.tag}`)
 })
 
-/* ================= WELCOME ================= */
+/* ================= WELCOME (UNCHANGED) ================= */
 
 client.on("guildMemberAdd", async member=>{
 
@@ -120,44 +118,50 @@ if(cmd==="help"){
 
 const embed=new EmbedBuilder()
 
-.setTitle("🏆 ShinTours Bot")
+.setTitle("🏆 ShinTours Tournament Bot")
 
 .setDescription(`
-🎮 **Tournament**
+🎮 Tournament
 
-;1v1 → create tournament  
-;start → start bracket  
-;bye → fill empty slots with BYE bots  
-;qual @user → qualify winner  
-;code <roomcode> @player → send room code  
+;1v1 <players> <server> <map> <prize>
+;start
+;code <roomcode> @player
 
-🎟 **Support**
+🎟 Support
 
-;ticketpanel → send ticket panel
+;ticketpanel
 `)
 
 .setColor("Grey")
 
 message.channel.send({embeds:[embed]})
 
+message.delete().catch(()=>{})
 }
 
-/* ================= TOURNAMENT PANEL ================= */
+/* ================= CREATE TOURNAMENT ================= */
 
 if(cmd==="1v1"){
 
 players=[]
-matches=[]
-winners=[]
-byeFill=false
+maxPlayers=parseInt(args[0]) || 16
+serverName=args[1] || "Asia"
+mapName=args[2] || "Random"
+prize=args[3] || "Custom"
 
 const embed=new EmbedBuilder()
 
-.setTitle("🏆 Tournament")
+.setTitle("🏆 Tournament Registration")
 
 .setDescription(`
-🎮 Mode: 1v1
-👤 Players: **0**
+🎮 Mode: **1v1**
+
+🌍 Server: **${serverName}**
+🗺 Map: **${mapName}**
+🎁 Prize: **${prize}**
+
+👤 Registered: **0/${maxPlayers}**
+
 Status: **OPEN**
 `)
 
@@ -174,7 +178,7 @@ new ButtonBuilder()
 
 new ButtonBuilder()
 .setCustomId("count")
-.setLabel("👤 0")
+.setLabel(`👤 0/${maxPlayers}`)
 .setStyle(ButtonStyle.Secondary)
 .setDisabled(true),
 
@@ -185,62 +189,51 @@ new ButtonBuilder()
 
 )
 
-message.channel.send({
-embeds:[embed],
-components:[row]
-})
+message.channel.send({embeds:[embed],components:[row]})
 
+message.delete().catch(()=>{})
 }
 
-/* ================= BYE ================= */
+/* ================= CODE ================= */
 
-if(cmd==="bye"){
-byeFill=true
-message.reply("BYE bots will fill empty bracket slots")
-}
+if(cmd==="code"){
 
-/* ================= START ================= */
+const code=args[0]
+const player=message.mentions.users.first()
 
-if(cmd==="start"){
+if(!code || !player) return
 
-if(players.length<2) return message.reply("Not enough players")
+const match=matches.find(m=>m.includes(player.id))
+if(!match) return
 
-let list=[...players]
-
-if(byeFill){
-
-while(list.length%2!==0){
-list.push("BYE")
-}
-
-}
-
-list.sort(()=>Math.random()-0.5)
-
-matches=[]
-
-for(let i=0;i<list.length;i+=2){
-matches.push([list[i],list[i+1]])
-}
-
-let text=""
-
-for(const m of matches){
-
-let p1=m[0]=="BYE"?"BYE BOT":(await client.users.fetch(m[0])).username
-let p2=m[1]=="BYE"?"BYE BOT":(await client.users.fetch(m[1])).username
-
-text+=`${p1} ${VS} ${p2}\n`
-}
+const opponentID=match.find(p=>p!==player.id)
+const opponent=await client.users.fetch(opponentID)
 
 const embed=new EmbedBuilder()
 
-.setTitle("🏆 Tournament Bracket")
-.setDescription(text)
-.setImage(BRACKET_IMAGES[0])
+.setTitle("🏆 Match Room Code")
 
-message.channel.send({embeds:[embed]})
+.setDescription(`
+Opponent: **${opponent.username}**
 
+Room Code
+
+\`\`\`
+${code}
+\`\`\`
+
+Server: **${serverName}**
+Map: **${mapName}**
+
+Good luck!
+`)
+
+player.send({embeds:[embed]}).catch(()=>{})
+opponent.send({embeds:[embed]}).catch(()=>{})
+
+message.reply(`${TICK} Code sent`)
+
+message.delete().catch(()=>{})
 }
 
 /* ================= TICKET PANEL ================= */
@@ -254,9 +247,9 @@ const embed=new EmbedBuilder()
 .setDescription(`
 Select an option below:
 
-🛡 **Support** → Need help or have a question  
-📋 **Apply** → Apply to become staff  
-🎁 **Reward** → Claim your reward
+🛡 **Support →** Need help or have a question
+📋 **Apply →** Apply to become staff
+🎁 **Reward →** Claim your reward
 `)
 
 .setImage(TICKET_IMG)
@@ -266,17 +259,17 @@ Select an option below:
 const row=new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
-.setCustomId("support_ticket")
+.setCustomId("support")
 .setLabel("🛡 Support")
 .setStyle(ButtonStyle.Danger),
 
 new ButtonBuilder()
-.setCustomId("apply_ticket")
+.setCustomId("apply")
 .setLabel("📋 Apply")
 .setStyle(ButtonStyle.Success),
 
 new ButtonBuilder()
-.setCustomId("reward_ticket")
+.setCustomId("reward")
 .setLabel("🎁 Reward")
 .setStyle(ButtonStyle.Primary)
 
@@ -301,9 +294,10 @@ if(interaction.customId==="register"){
 if(players.includes(interaction.user.id))
 return interaction.reply({content:"Already registered",ephemeral:true})
 
-players.push(interaction.user.id)
+if(players.length>=maxPlayers)
+return interaction.reply({content:"Tournament full",ephemeral:true})
 
-const count=players.length
+players.push(interaction.user.id)
 
 const row=new ActionRowBuilder().addComponents(
 
@@ -314,7 +308,7 @@ new ButtonBuilder()
 
 new ButtonBuilder()
 .setCustomId("count")
-.setLabel(`👤 ${count}`)
+.setLabel(`👤 ${players.length}/${maxPlayers}`)
 .setStyle(ButtonStyle.Secondary)
 .setDisabled(true),
 
@@ -337,8 +331,6 @@ if(interaction.customId==="unregister"){
 
 players=players.filter(p=>p!==interaction.user.id)
 
-const count=players.length
-
 const row=new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
@@ -348,7 +340,7 @@ new ButtonBuilder()
 
 new ButtonBuilder()
 .setCustomId("count")
-.setLabel(`👤 ${count}`)
+.setLabel(`👤 ${players.length}/${maxPlayers}`)
 .setStyle(ButtonStyle.Secondary)
 .setDisabled(true),
 
@@ -361,37 +353,34 @@ new ButtonBuilder()
 
 interaction.message.edit({components:[row]})
 
-interaction.reply({content:"Removed from tournament",ephemeral:true})
+interaction.reply({content:"Removed",ephemeral:true})
 
 }
 
-/* ================= TICKET BUTTONS ================= */
+/* ================= TICKET CREATION ================= */
 
-if(interaction.customId.includes("ticket")){
+if(["support","apply","reward"].includes(interaction.customId)){
 
-const guild=interaction.guild
-
-let category=guild.channels.cache.find(c=>c.name==="ShinTours Support")
+let category=interaction.guild.channels.cache.find(
+c=>c.name==="ShinTours Support"
+)
 
 if(!category){
 
-category=await guild.channels.create({
+category=await interaction.guild.channels.create({
 name:"ShinTours Support",
 type:ChannelType.GuildCategory
 })
 
 }
 
-let name="support"
+const modRole=interaction.guild.roles.cache.find(
+r=>r.name==="Moderator"
+)
 
-if(interaction.customId==="apply_ticket") name="apply"
-if(interaction.customId==="reward_ticket") name="reward"
+const channel=await interaction.guild.channels.create({
 
-const modRole=guild.roles.cache.find(r=>r.name==="Moderator")
-
-const channel=await guild.channels.create({
-
-name:`${name}-${interaction.user.username}`,
+name:`${interaction.customId}-${interaction.user.username}`,
 
 type:ChannelType.GuildText,
 
@@ -400,7 +389,7 @@ parent:category.id,
 permissionOverwrites:[
 
 {
-id:guild.id,
+id:interaction.guild.id,
 deny:[PermissionsBitField.Flags.ViewChannel]
 },
 
@@ -435,5 +424,7 @@ ephemeral:true
 }
 
 })
+
+/* ================= LOGIN ================= */
 
 client.login(process.env.TOKEN)
