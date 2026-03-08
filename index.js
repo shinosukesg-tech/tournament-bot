@@ -85,6 +85,7 @@ if(!channel) return
 const embed = new EmbedBuilder()
 
 .setTitle("🎉 New Member Joined!")
+
 .setThumbnail(member.user.displayAvatarURL({dynamic:true}))
 
 .setDescription(`
@@ -104,6 +105,7 @@ const embed = new EmbedBuilder()
 `)
 
 .setColor("Green")
+
 .setFooter({ text: `Welcome ${member.user.username}!` })
 
 channel.send({embeds:[embed]})
@@ -112,13 +114,59 @@ channel.send({embeds:[embed]})
 
 /* ================= COMMAND HANDLER ================= */
 
-client.on("messageCreate", async message => {
+client.on("messageCreate", async message=>{
 
 if(message.author.bot) return
 if(!message.content.startsWith(PREFIX)) return
 
 const args = message.content.slice(PREFIX.length).trim().split(/ +/)
 const cmd = args.shift().toLowerCase()
+
+/* ================= HELP ================= */
+
+if(cmd==="help"){
+
+const embed=new EmbedBuilder()
+
+.setTitle("📜 Bot Commands")
+
+.setColor("Blue")
+
+.setDescription(`
+🎮 **Tournament**
+;1v1 <players>
+;start
+;code <roomcode> @player
+
+🎫 **Support**
+;ticketpanel
+
+⚙ **Setup**
+;welcome #channel
+`)
+
+message.channel.send({embeds:[embed]})
+
+}
+
+/* ================= SET WELCOME ================= */
+
+if(cmd==="welcome"){
+
+if(!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
+return message.reply("Administrator only")
+
+let channel=message.mentions.channels.first()
+
+if(!channel) return message.reply("Usage: ;welcome #channel")
+
+welcomeData[message.guild.id]=channel.id
+
+saveWelcome()
+
+message.reply(`Welcome channel set to ${channel}`)
+
+}
 
 /* ================= CREATE TOURNAMENT ================= */
 
@@ -134,16 +182,18 @@ matches=[]
 winners=[]
 round=1
 
-const embed = new EmbedBuilder()
+const embed=new EmbedBuilder()
 
 .setTitle("🏆 Tournament Registration")
+
 .setDescription(`
 Players: **0/${maxPlayers}**
 Status: **OPEN**
 `)
+
 .setImage(REGISTER_IMG)
 
-const row = new ActionRowBuilder().addComponents(
+const row=new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
 .setCustomId("register")
@@ -158,7 +208,7 @@ new ButtonBuilder()
 
 )
 
-registerMessage = await message.channel.send({
+registerMessage=await message.channel.send({
 embeds:[embed],
 components:[row]
 })
@@ -218,6 +268,7 @@ let p2=await client.users.fetch(match.p2)
 const embed=new EmbedBuilder()
 
 .setTitle("🎮 Match Room Code")
+
 .setDescription(`
 Match
 
@@ -228,6 +279,7 @@ Room Code
 ${roomCode}
 \`\`\`
 `)
+
 .setColor("Blue")
 
 try{
@@ -246,11 +298,13 @@ if(cmd==="ticketpanel"){
 const embed=new EmbedBuilder()
 
 .setTitle("🎫 Support Panel")
+
 .setDescription(`
 🛡 Support
 📋 Apply
 🎁 Reward
 `)
+
 .setImage(TICKET_IMG)
 
 const row=new ActionRowBuilder().addComponents(
@@ -347,71 +401,6 @@ interaction.reply({content:"Winner selected",ephemeral:true})
 
 }
 
-/* ================= TICKET CREATE ================= */
-
-if(["support","apply","reward"].includes(interaction.customId)){
-
-let guild=interaction.guild
-
-let category=guild.channels.cache.find(c=>c.name==="ShinTours Support")
-
-if(!category){
-
-category=await guild.channels.create({
-name:"ShinTours Support",
-type:ChannelType.GuildCategory
-})
-
-}
-
-let modRole=guild.roles.cache.find(r=>r.name===MOD_ROLE)
-
-let channel=await guild.channels.create({
-
-name:`${interaction.customId}-${interaction.user.username}`,
-
-type:ChannelType.GuildText,
-
-parent:category.id,
-
-permissionOverwrites:[
-{
-id:guild.id,
-deny:[PermissionsBitField.Flags.ViewChannel]
-},
-{
-id:interaction.user.id,
-allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
-},
-{
-id:modRole.id,
-allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
-}
-]
-
-})
-
-const row=new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("close_ticket")
-.setLabel("Close Ticket")
-.setStyle(ButtonStyle.Danger)
-
-)
-
-channel.send({
-content:`Hello ${interaction.user}`,
-components:[row]
-})
-
-interaction.reply({
-content:`Ticket created: ${channel}`,
-ephemeral:true
-})
-
-}
-
 /* ================= CLOSE TICKET ================= */
 
 if(interaction.customId==="close_ticket"){
@@ -430,6 +419,7 @@ interaction.channel.delete()
 function sendBracket(channel){
 
 let embed=new EmbedBuilder()
+
 .setTitle(`Round ${round}`)
 
 let desc=""
@@ -445,6 +435,7 @@ let rows=[]
 matches.forEach((m,i)=>{
 
 rows.push(
+
 new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
@@ -458,6 +449,7 @@ new ButtonBuilder()
 .setStyle(ButtonStyle.Primary)
 
 )
+
 )
 
 })
@@ -475,7 +467,9 @@ if(winners.length===1){
 const embed=new EmbedBuilder()
 
 .setTitle("🏆 Champion")
+
 .setDescription(`<@${winners[0]}> wins the tournament!`)
+
 .setImage(WINNER_IMG)
 
 channel.send({embeds:[embed]})
