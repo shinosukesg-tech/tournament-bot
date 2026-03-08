@@ -21,6 +21,8 @@ ChannelType,
 PermissionsBitField
 } = require("discord.js")
 
+const fs = require("fs")
+
 const client = new Client({
 intents:[
 GatewayIntentBits.Guilds,
@@ -55,6 +57,17 @@ let maxPlayers=16
 
 let registerMessage=null
 
+/* ================= WELCOME DATA ================= */
+
+let welcomeData={}
+if(fs.existsSync("./welcome.json")){
+welcomeData=JSON.parse(fs.readFileSync("./welcome.json"))
+}
+
+function saveWelcome(){
+fs.writeFileSync("./welcome.json",JSON.stringify(welcomeData,null,2))
+}
+
 /* ================= READY ================= */
 
 client.on("ready",()=>{
@@ -65,42 +78,41 @@ console.log(`Logged in as ${client.user.tag}`)
 
 client.on("guildMemberAdd", async member => {
 
-let channel = member.guild.channels.cache.find(c=>c.name.includes("welcome"))
+let data = welcomeData[member.guild.id]
+if(!data) return
+
+let channel = member.guild.channels.cache.get(data)
 if(!channel) return
 
 const embed = new EmbedBuilder()
 
-.setTitle("🎉 New Member Joined")
+.setTitle("🎉 New Member Joined!")
 
-.setThumbnail(member.user.displayAvatarURL())
+.setThumbnail(member.user.displayAvatarURL({dynamic:true}))
 
 .setDescription(`
-**User:** ${member.user.username}
+👤 **User:** ${member.user}
 
-**User ID:** ${member.id}
+🆔 **User ID:** \`${member.id}\`
 
-**Account Created:** <t:${Math.floor(member.user.createdTimestamp/1000)}:F>
+📅 **Account Created:**  
+<t:${Math.floor(member.user.createdTimestamp/1000)}:F>
 
-**Joined Server:** <t:${Math.floor(Date.now()/1000)}:F>
+📥 **Joined Server:**  
+<t:${Math.floor(Date.now()/1000)}:F>
 
-Welcome to **${member.guild.name}**
+👥 **Member Count:** ${member.guild.memberCount}
+
+🎊 Welcome to **${member.guild.name}**!
 `)
 
 .setColor("Green")
 
+.setFooter({ text: `Welcome ${member.user.username}!` })
+
 channel.send({embeds:[embed]})
 
 })
-
-/* ================= COMMANDS ================= */
-
-client.on("messageCreate", async message=>{
-
-if(message.author.bot) return
-if(!message.content.startsWith(PREFIX)) return
-
-const args = message.content.slice(PREFIX.length).split(/ +/)
-const cmd = args.shift().toLowerCase()
 
 /* ================= CREATE TOURNAMENT ================= */
 
