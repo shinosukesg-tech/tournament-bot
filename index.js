@@ -58,7 +58,7 @@ let prizeName="Unknown"
 
 let registerMessage=null
 
-/* ================= WELCOME DATA ================= */
+/* ================= WELCOME ================= */
 
 let welcomeData={}
 if(fs.existsSync("./welcome.json")){
@@ -68,8 +68,6 @@ welcomeData=JSON.parse(fs.readFileSync("./welcome.json"))
 function saveWelcome(){
 fs.writeFileSync("./welcome.json",JSON.stringify(welcomeData,null,2))
 }
-
-/* ================= READY ================= */
 
 client.on("ready",()=>{
 console.log(`Logged in as ${client.user.tag}`)
@@ -115,7 +113,7 @@ channel.send({embeds:[embed]})
 
 })
 
-/* ================= COMMAND HANDLER ================= */
+/* ================= COMMANDS ================= */
 
 client.on("messageCreate", async message=>{
 
@@ -164,13 +162,16 @@ if(!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
 return
 
 let channel=message.mentions.channels.first()
-
 if(!channel) return
 
 welcomeData[message.guild.id]=channel.id
 saveWelcome()
 
-message.channel.send(`Welcome channel set to ${channel}`)
+message.channel.send({embeds:[
+new EmbedBuilder()
+.setColor("Green")
+.setDescription(`✅ Welcome channel set to ${channel}`)
+]})
 
 }
 
@@ -213,6 +214,12 @@ new ButtonBuilder()
 .setStyle(ButtonStyle.Success),
 
 new ButtonBuilder()
+.setCustomId("count")
+.setLabel(`0/${maxPlayers}`)
+.setStyle(ButtonStyle.Secondary)
+.setDisabled(true),
+
+new ButtonBuilder()
 .setCustomId("unregister")
 .setLabel("Unregister")
 .setEmoji("❌")
@@ -233,6 +240,11 @@ if(cmd==="start"){
 
 if(!message.member.roles.cache.find(r=>r.name===STAFF_ROLE))
 return
+
+if(players.length < 2)
+return message.channel.send({embeds:[
+new EmbedBuilder().setColor("Red").setDescription("Not enough players.")
+]})
 
 let shuffled=[...players].sort(()=>Math.random()-0.5)
 
@@ -258,7 +270,11 @@ if(!user) return
 
 winners.push(user.id)
 
-message.channel.send(`${user} qualified`)
+message.channel.send({embeds:[
+new EmbedBuilder()
+.setColor("Green")
+.setDescription(`✅ ${user} qualified`)
+]})
 
 }
 
@@ -318,9 +334,49 @@ p2.send({embeds:[embed]}).catch(()=>{})
 
 }
 
+/* ================= TICKET PANEL ================= */
+
+if(cmd==="ticketpanel"){
+
+const embed=new EmbedBuilder()
+
+.setTitle("🎫 Support Panel")
+
+.setDescription(`
+🛡 Support
+📋 Apply
+🎁 Reward
+`)
+
+const row=new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("support")
+.setLabel("Support")
+.setEmoji("🛡")
+.setStyle(ButtonStyle.Danger),
+
+new ButtonBuilder()
+.setCustomId("apply")
+.setLabel("Apply")
+.setEmoji("📋")
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("reward")
+.setLabel("Reward")
+.setEmoji("🎁")
+.setStyle(ButtonStyle.Primary)
+
+)
+
+message.channel.send({embeds:[embed],components:[row]})
+
+}
+
 })
 
-/* ================= BUTTON INTERACTIONS ================= */
+/* ================= BUTTONS ================= */
 
 client.on("interactionCreate", async interaction=>{
 
@@ -338,6 +394,8 @@ return interaction.reply({content:"Tournament full",ephemeral:true})
 
 players.push(interaction.user.id)
 
+updateRegister()
+
 interaction.reply({content:"Registered",ephemeral:true})
 
 }
@@ -348,11 +406,13 @@ if(interaction.customId==="unregister"){
 
 players=players.filter(p=>p!==interaction.user.id)
 
+updateRegister()
+
 interaction.reply({content:"Unregistered",ephemeral:true})
 
 }
 
-/* ================= TICKETS ================= */
+/* TICKETS */
 
 if(["support","apply","reward"].includes(interaction.customId)){
 
@@ -405,13 +465,48 @@ ephemeral:true
 
 })
 
+/* ================= UPDATE REGISTER PANEL ================= */
+
+function updateRegister(){
+
+if(!registerMessage) return
+
+let disable = players.length>=maxPlayers
+
+const row=new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("register")
+.setLabel("Register")
+.setEmoji("✅")
+.setStyle(ButtonStyle.Success)
+.setDisabled(disable),
+
+new ButtonBuilder()
+.setCustomId("count")
+.setLabel(`${players.length}/${maxPlayers}`)
+.setStyle(ButtonStyle.Secondary)
+.setDisabled(true),
+
+new ButtonBuilder()
+.setCustomId("unregister")
+.setLabel("Unregister")
+.setEmoji("❌")
+.setStyle(ButtonStyle.Danger)
+
+)
+
+registerMessage.edit({components:[row]})
+
+}
+
 /* ================= BRACKET ================= */
 
 function sendBracket(channel){
 
 let embed=new EmbedBuilder()
 
-.setTitle(`Round ${round}`)
+.setTitle(`🏆 Round ${round}`)
 
 .setImage(BRACKET_IMG)
 
