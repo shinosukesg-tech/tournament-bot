@@ -42,9 +42,7 @@ const STAFF_ROLE="Tournament Staff"
 /* ================= IMAGES ================= */
 
 const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png"
-
 const WINNER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
-
 const TICKET_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
 
 /* ================= DATA ================= */
@@ -87,7 +85,6 @@ if(!channel) return
 const embed = new EmbedBuilder()
 
 .setTitle("🎉 New Member Joined!")
-
 .setThumbnail(member.user.displayAvatarURL({dynamic:true}))
 
 .setDescription(`
@@ -107,12 +104,21 @@ const embed = new EmbedBuilder()
 `)
 
 .setColor("Green")
-
 .setFooter({ text: `Welcome ${member.user.username}!` })
 
 channel.send({embeds:[embed]})
 
 })
+
+/* ================= COMMAND HANDLER ================= */
+
+client.on("messageCreate", async message => {
+
+if(message.author.bot) return
+if(!message.content.startsWith(PREFIX)) return
+
+const args = message.content.slice(PREFIX.length).trim().split(/ +/)
+const cmd = args.shift().toLowerCase()
 
 /* ================= CREATE TOURNAMENT ================= */
 
@@ -131,12 +137,10 @@ round=1
 const embed = new EmbedBuilder()
 
 .setTitle("🏆 Tournament Registration")
-
 .setDescription(`
 Players: **0/${maxPlayers}**
 Status: **OPEN**
 `)
-
 .setImage(REGISTER_IMG)
 
 const row = new ActionRowBuilder().addComponents(
@@ -214,7 +218,6 @@ let p2=await client.users.fetch(match.p2)
 const embed=new EmbedBuilder()
 
 .setTitle("🎮 Match Room Code")
-
 .setDescription(`
 Match
 
@@ -225,7 +228,6 @@ Room Code
 ${roomCode}
 \`\`\`
 `)
-
 .setColor("Blue")
 
 try{
@@ -244,13 +246,11 @@ if(cmd==="ticketpanel"){
 const embed=new EmbedBuilder()
 
 .setTitle("🎫 Support Panel")
-
 .setDescription(`
 🛡 Support
 📋 Apply
 🎁 Reward
 `)
-
 .setImage(TICKET_IMG)
 
 const row=new ActionRowBuilder().addComponents(
@@ -430,15 +430,12 @@ interaction.channel.delete()
 function sendBracket(channel){
 
 let embed=new EmbedBuilder()
-
 .setTitle(`Round ${round}`)
 
 let desc=""
 
 matches.forEach((m,i)=>{
-
 desc+=`Match ${i+1}\n<@${m.p1}> VS <@${m.p2}>\n\n`
-
 })
 
 embed.setDescription(desc)
@@ -448,7 +445,6 @@ let rows=[]
 matches.forEach((m,i)=>{
 
 rows.push(
-
 new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
@@ -462,7 +458,6 @@ new ButtonBuilder()
 .setStyle(ButtonStyle.Primary)
 
 )
-
 )
 
 })
@@ -480,9 +475,7 @@ if(winners.length===1){
 const embed=new EmbedBuilder()
 
 .setTitle("🏆 Champion")
-
 .setDescription(`<@${winners[0]}> wins the tournament!`)
-
 .setImage(WINNER_IMG)
 
 channel.send({embeds:[embed]})
