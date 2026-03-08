@@ -42,8 +42,8 @@ const STAFF_ROLE="Tournament Staff"
 /* ================= IMAGES ================= */
 
 const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png"
-const WINNER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
-const TICKET_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807667366559906/Event_Background_StumbleQuick1.png"
+
+const BRACKET_IMG="https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png"
 
 /* ================= DATA ================= */
 
@@ -52,6 +52,9 @@ let matches=[]
 let winners=[]
 let round=1
 let maxPlayers=16
+
+let serverName="Unknown"
+let prizeName="Unknown"
 
 let registerMessage=null
 
@@ -122,6 +125,8 @@ if(!message.content.startsWith(PREFIX)) return
 const args = message.content.slice(PREFIX.length).trim().split(/ +/)
 const cmd = args.shift().toLowerCase()
 
+message.delete().catch(()=>{})
+
 /* ================= HELP ================= */
 
 if(cmd==="help"){
@@ -133,10 +138,12 @@ const embed=new EmbedBuilder()
 .setColor("Blue")
 
 .setDescription(`
-🎮 **Tournament**
-;1v1 <players>
+🏆 **Tournament**
+;1v1 <players> <server> <prize>
 ;start
-;code <roomcode> @player
+;code <room> @player
+;qual @player
+;next
 
 🎫 **Support**
 ;ticketpanel
@@ -154,17 +161,16 @@ message.channel.send({embeds:[embed]})
 if(cmd==="welcome"){
 
 if(!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
-return message.reply("Administrator only")
+return
 
 let channel=message.mentions.channels.first()
 
-if(!channel) return message.reply("Usage: ;welcome #channel")
+if(!channel) return
 
 welcomeData[message.guild.id]=channel.id
-
 saveWelcome()
 
-message.reply(`Welcome channel set to ${channel}`)
+message.channel.send(`Welcome channel set to ${channel}`)
 
 }
 
@@ -172,10 +178,12 @@ message.reply(`Welcome channel set to ${channel}`)
 
 if(cmd==="1v1"){
 
-if(!message.member.roles.cache.some(r=>r.name===STAFF_ROLE))
+if(!message.member.roles.cache.find(r=>r.name===STAFF_ROLE))
 return
 
 maxPlayers=parseInt(args[0]) || 16
+serverName=args[1] || "Unknown"
+prizeName=args[2] || "Unknown"
 
 players=[]
 matches=[]
@@ -187,7 +195,10 @@ const embed=new EmbedBuilder()
 .setTitle("🏆 Tournament Registration")
 
 .setDescription(`
-Players: **0/${maxPlayers}**
+🎮 **Server:** ${serverName}
+🎁 **Prize:** ${prizeName}
+
+👥 Players: **0/${maxPlayers}**
 Status: **OPEN**
 `)
 
@@ -198,13 +209,14 @@ const row=new ActionRowBuilder().addComponents(
 new ButtonBuilder()
 .setCustomId("register")
 .setLabel("Register")
+.setEmoji("✅")
 .setStyle(ButtonStyle.Success),
 
 new ButtonBuilder()
-.setCustomId("count")
-.setLabel(`0/${maxPlayers}`)
-.setStyle(ButtonStyle.Secondary)
-.setDisabled(true)
+.setCustomId("unregister")
+.setLabel("Unregister")
+.setEmoji("❌")
+.setStyle(ButtonStyle.Danger)
 
 )
 
@@ -215,15 +227,12 @@ components:[row]
 
 }
 
-/* ================= START TOURNAMENT ================= */
+/* ================= START ================= */
 
 if(cmd==="start"){
 
-if(!message.member.roles.cache.some(r=>r.name===STAFF_ROLE))
+if(!message.member.roles.cache.find(r=>r.name===STAFF_ROLE))
 return
-
-if(players.length<2)
-return message.reply("Not enough players")
 
 let shuffled=[...players].sort(()=>Math.random()-0.5)
 
@@ -232,11 +241,7 @@ matches=[]
 for(let i=0;i<shuffled.length;i+=2){
 
 if(shuffled[i+1])
-matches.push({
-p1:shuffled[i],
-p2:shuffled[i+1],
-winner:null
-})
+matches.push({p1:shuffled[i],p2:shuffled[i+1]})
 
 }
 
@@ -244,92 +249,72 @@ sendBracket(message.channel)
 
 }
 
-/* ================= SEND ROOM CODE ================= */
+/* ================= QUALIFY ================= */
+
+if(cmd==="qual"){
+
+let user=message.mentions.users.first()
+if(!user) return
+
+winners.push(user.id)
+
+message.channel.send(`${user} qualified`)
+
+}
+
+/* ================= NEXT ROUND ================= */
+
+if(cmd==="next"){
+
+if(winners.length<2) return
+
+let list=[...winners]
+
+winners=[]
+matches=[]
+round++
+
+for(let i=0;i<list.length;i+=2){
+
+if(list[i+1])
+matches.push({p1:list[i],p2:list[i+1]})
+
+}
+
+sendBracket(message.channel)
+
+}
+
+/* ================= CODE ================= */
 
 if(cmd==="code"){
 
-if(!message.member.roles.cache.some(r=>r.name===STAFF_ROLE))
-return
+let room=args[0]
+let user=message.mentions.users.first()
 
-let roomCode=args[0]
-let player=message.mentions.users.first()
+if(!room||!user) return
 
-if(!roomCode || !player)
-return message.reply("Usage: ;code <roomcode> @player")
-
-let match=matches.find(m=>m.p1==player.id || m.p2==player.id)
-
-if(!match)
-return message.reply("Match not found")
+let match=matches.find(m=>m.p1==user.id||m.p2==user.id)
+if(!match) return
 
 let p1=await client.users.fetch(match.p1)
 let p2=await client.users.fetch(match.p2)
 
 const embed=new EmbedBuilder()
 
-.setTitle("🎮 Match Room Code")
+.setTitle("🎮 Match Room")
 
 .setDescription(`
-Match
-
-**${p1.username} VS ${p2.username}**
+${p1.username} VS ${p2.username}
 
 Room Code
 \`\`\`
-${roomCode}
+${room}
 \`\`\`
 `)
 
-.setColor("Blue")
-
-try{
-await p1.send({embeds:[embed]})
-await p2.send({embeds:[embed]})
-}catch(e){}
-
-message.channel.send(`Code sent to **${p1.username}** and **${p2.username}**`)
-
-}
-
-/* ================= TICKET PANEL ================= */
-
-if(cmd==="ticketpanel"){
-
-const embed=new EmbedBuilder()
-
-.setTitle("🎫 Support Panel")
-
-.setDescription(`
-🛡 Support
-📋 Apply
-🎁 Reward
-`)
-
-.setImage(TICKET_IMG)
-
-const row=new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("support")
-.setLabel("🛡 Support")
-.setStyle(ButtonStyle.Danger),
-
-new ButtonBuilder()
-.setCustomId("apply")
-.setLabel("📋 Apply")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("reward")
-.setLabel("🎁 Reward")
-.setStyle(ButtonStyle.Primary)
-
-)
-
-message.channel.send({
-embeds:[embed],
-components:[row]
-})
+p1.send({embeds:[embed]}).catch(()=>{})
+p2.send({embeds:[embed]}).catch(()=>{})
 
 }
 
@@ -346,69 +331,75 @@ if(!interaction.isButton()) return
 if(interaction.customId==="register"){
 
 if(players.includes(interaction.user.id))
-return interaction.reply({content:"Already registered",ephemeral:true})
+return interaction.reply({content:"Already joined",ephemeral:true})
 
 if(players.length>=maxPlayers)
 return interaction.reply({content:"Tournament full",ephemeral:true})
 
 players.push(interaction.user.id)
 
-let disable = players.length>=maxPlayers
-
-const row=new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("register")
-.setLabel("Register")
-.setStyle(ButtonStyle.Success)
-.setDisabled(disable),
-
-new ButtonBuilder()
-.setCustomId("count")
-.setLabel(`${players.length}/${maxPlayers}`)
-.setStyle(ButtonStyle.Secondary)
-.setDisabled(true)
-
-)
-
-await registerMessage.edit({components:[row]})
-
-interaction.reply({content:"Registered!",ephemeral:true})
+interaction.reply({content:"Registered",ephemeral:true})
 
 }
 
-/* ================= QUALIFY ================= */
+/* UNREGISTER */
 
-if(interaction.customId.startsWith("qualify")){
+if(interaction.customId==="unregister"){
 
-if(!interaction.member.roles.cache.some(r=>r.name===STAFF_ROLE))
-return interaction.reply({content:"Only Tournament Staff",ephemeral:true})
+players=players.filter(p=>p!==interaction.user.id)
 
-let parts=interaction.customId.split("_")
-let index=parseInt(parts[1])
-let side=parts[2]
-
-let match=matches[index]
-
-let win=side==="p1"?match.p1:match.p2
-
-match.winner=win
-winners.push(win)
-
-updateBracket(interaction.channel)
-
-interaction.reply({content:"Winner selected",ephemeral:true})
+interaction.reply({content:"Unregistered",ephemeral:true})
 
 }
 
-/* ================= CLOSE TICKET ================= */
+/* ================= TICKETS ================= */
 
-if(interaction.customId==="close_ticket"){
+if(["support","apply","reward"].includes(interaction.customId)){
 
-if(!interaction.member.roles.cache.some(r=>r.name===MOD_ROLE))
-return interaction.reply({content:"Only Moderator",ephemeral:true})
+let guild=interaction.guild
 
-interaction.channel.delete()
+let category=guild.channels.cache.find(c=>c.name==="ShinTours Support")
+
+if(!category){
+
+category=await guild.channels.create({
+name:"ShinTours Support",
+type:ChannelType.GuildCategory
+})
+
+}
+
+let modRole=guild.roles.cache.find(r=>r.name===MOD_ROLE)
+
+let channel=await guild.channels.create({
+
+name:`${interaction.customId}-${interaction.user.username}`,
+
+type:ChannelType.GuildText,
+
+parent:category.id,
+
+permissionOverwrites:[
+{
+id:guild.id,
+deny:[PermissionsBitField.Flags.ViewChannel]
+},
+{
+id:interaction.user.id,
+allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
+},
+{
+id:modRole.id,
+allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
+}
+]
+
+})
+
+interaction.reply({
+content:`Ticket created: ${channel}`,
+ephemeral:true
+})
 
 }
 
@@ -422,6 +413,8 @@ let embed=new EmbedBuilder()
 
 .setTitle(`Round ${round}`)
 
+.setImage(BRACKET_IMG)
+
 let desc=""
 
 matches.forEach((m,i)=>{
@@ -430,75 +423,7 @@ desc+=`Match ${i+1}\n<@${m.p1}> VS <@${m.p2}>\n\n`
 
 embed.setDescription(desc)
 
-let rows=[]
-
-matches.forEach((m,i)=>{
-
-rows.push(
-
-new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId(`qualify_${i}_p1`)
-.setLabel("Qualify P1")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId(`qualify_${i}_p2`)
-.setLabel("Qualify P2")
-.setStyle(ButtonStyle.Primary)
-
-)
-
-)
-
-})
-
-channel.send({embeds:[embed],components:rows})
-
-}
-
-function updateBracket(channel){
-
-if(winners.length===matches.length){
-
-if(winners.length===1){
-
-const embed=new EmbedBuilder()
-
-.setTitle("🏆 Champion")
-
-.setDescription(`<@${winners[0]}> wins the tournament!`)
-
-.setImage(WINNER_IMG)
-
 channel.send({embeds:[embed]})
-
-return
-
-}
-
-round++
-
-let list=[...winners]
-
-winners=[]
-matches=[]
-
-for(let i=0;i<list.length;i+=2){
-
-if(list[i+1])
-matches.push({
-p1:list[i],
-p2:list[i+1],
-winner:null
-})
-
-}
-
-sendBracket(channel)
-
-}
 
 }
 
