@@ -60,7 +60,6 @@ let tournamentFile="./tournament.json"
 
 function loadTournament(){
 if(!fs.existsSync(tournamentFile)) return {}
-
 return JSON.parse(fs.readFileSync(tournamentFile))
 }
 
@@ -76,6 +75,12 @@ let winners=data.winners || []
 let completedMatches=data.completedMatches || []
 let round=data.round || 1
 let maxPlayers=data.maxPlayers || 16
+
+let server=data.server || "Unknown"
+let map=data.map || "Unknown"
+let reward1=data.reward1 || "-"
+let reward2=data.reward2 || "-"
+let reward3=data.reward3 || "-"
 
 let registerMessage=null
 let bracketMessage=null
@@ -115,16 +120,31 @@ matches=[]
 winners=[]
 completedMatches=[]
 round=1
-maxPlayers=parseInt(args[0])||16
 
-saveTournament({players,matches,winners,completedMatches,round,maxPlayers})
+maxPlayers=parseInt(args[0])||16
+server=args[1] || "Unknown"
+map=args[2] || "Unknown"
+reward1=args[3] || "-"
+reward2=args[4] || "-"
+reward3=args[5] || "-"
+
+saveTournament({players,matches,winners,completedMatches,round,maxPlayers,server,map,reward1,reward2,reward3})
 
 const embed=new EmbedBuilder()
 
-.setTitle("🏆 Tournament Registration")
+.setTitle("🏆 ShinTours Tournament")
 
 .setDescription(`
-👤 Players: 0/${maxPlayers}
+🌍 **Server:** ${server}
+🗺 **Map:** ${map}
+
+🎁 **Rewards**
+🥇 ${reward1}
+🥈 ${reward2}
+🥉 ${reward3}
+
+👤 **Players:** ${players.length}/${maxPlayers}
+
 Hosted by **${STAFF_ROLE}**
 `)
 .setImage(REGISTER_IMG)
@@ -140,7 +160,7 @@ new ButtonBuilder()
 
 new ButtonBuilder()
 .setCustomId("count")
-.setLabel(`👤 0/${maxPlayers}`)
+.setLabel(`👤 ${players.length}/${maxPlayers}`)
 .setStyle(ButtonStyle.Secondary)
 .setDisabled(true),
 
@@ -177,7 +197,7 @@ matches.push({p1:shuffled[i],p2:"BYE"})
 
 }
 
-saveTournament({players,matches,winners,completedMatches,round,maxPlayers})
+saveTournament({players,matches,winners,completedMatches,round,maxPlayers,server,map,reward1,reward2,reward3})
 
 sendBracket(message.channel)
 
@@ -196,7 +216,7 @@ if(index==-1) return
 completedMatches.push(index)
 winners.push(user.id)
 
-saveTournament({players,matches,winners,completedMatches,round,maxPlayers})
+saveTournament({players,matches,winners,completedMatches,round,maxPlayers,server,map,reward1,reward2,reward3})
 
 sendBracket(message.channel)
 
@@ -212,7 +232,7 @@ let win=await client.users.fetch(winners[0])
 
 const embed=new EmbedBuilder()
 
-.setTitle("🏆 Tournament Winner")
+.setTitle("🏆 ShinTours Tournament Winner")
 .setDescription(`🎉 Winner: **${win.username}**`)
 .setFooter(footer())
 
@@ -237,7 +257,7 @@ matches.push({p1:list[i],p2:"BYE"})
 
 }
 
-saveTournament({players,matches,winners,completedMatches,round,maxPlayers})
+saveTournament({players,matches,winners,completedMatches,round,maxPlayers,server,map,reward1,reward2,reward3})
 
 sendBracket(message.channel)
 
@@ -260,7 +280,7 @@ return interaction.reply({content:"Already registered",ephemeral:true})
 
 players.push(interaction.user.id)
 
-saveTournament({players,matches,winners,completedMatches,round,maxPlayers})
+saveTournament({players,matches,winners,completedMatches,round,maxPlayers,server,map,reward1,reward2,reward3})
 
 updateRegister()
 
@@ -274,87 +294,11 @@ if(interaction.customId==="unregister"){
 
 players=players.filter(p=>p!==interaction.user.id)
 
-saveTournament({players,matches,winners,completedMatches,round,maxPlayers})
+saveTournament({players,matches,winners,completedMatches,round,maxPlayers,server,map,reward1,reward2,reward3})
 
 updateRegister()
 
 interaction.reply({content:"Removed",ephemeral:true})
-
-}
-
-/* ================= TICKET SYSTEM ================= */
-
-if(["support","apply","reward"].includes(interaction.customId)){
-
-const guild=interaction.guild
-const modRole=guild.roles.cache.find(r=>r.name===MOD_ROLE)
-
-let category=guild.channels.cache.find(c=>c.name==="Shin Support")
-
-if(!category){
-
-category=await guild.channels.create({
-name:"Shin Support",
-type:ChannelType.GuildCategory
-})
-
-}
-
-const channel=await guild.channels.create({
-
-name:`ticket-${interaction.user.username}`,
-type:ChannelType.GuildText,
-parent:category.id,
-
-permissionOverwrites:[
-
-{ id:guild.id, deny:[PermissionsBitField.Flags.ViewChannel] },
-
-{ id:interaction.user.id,
-allow:[
-PermissionsBitField.Flags.ViewChannel,
-PermissionsBitField.Flags.SendMessages
-]},
-
-{ id:modRole?.id,
-allow:[
-PermissionsBitField.Flags.ViewChannel,
-PermissionsBitField.Flags.SendMessages
-]}
-
-]
-
-})
-
-const embed=new EmbedBuilder()
-.setTitle("🎫 Ticket Opened")
-.setDescription(`User: ${interaction.user}`)
-.setImage(TICKET_IMG)
-.setFooter(footer())
-
-const row=new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("close_ticket")
-.setLabel("Close Ticket")
-.setStyle(ButtonStyle.Danger)
-
-)
-
-await channel.send({content:`${interaction.user}`,embeds:[embed],components:[row]})
-
-interaction.reply({content:`Ticket created: ${channel}`,ephemeral:true})
-
-}
-
-/* ================= CLOSE TICKET ================= */
-
-if(interaction.customId==="close_ticket"){
-
-if(!interaction.member.roles.cache.find(r=>r.name===MOD_ROLE))
-return interaction.reply({content:"Moderator only.",ephemeral:true})
-
-interaction.channel.delete()
 
 }
 
@@ -365,6 +309,26 @@ interaction.channel.delete()
 function updateRegister(){
 
 if(!registerMessage) return
+
+const embed=new EmbedBuilder()
+
+.setTitle("🏆 ShinTours Tournament")
+
+.setDescription(`
+🌍 **Server:** ${server}
+🗺 **Map:** ${map}
+
+🎁 **Rewards**
+🥇 ${reward1}
+🥈 ${reward2}
+🥉 ${reward3}
+
+👤 **Players:** ${players.length}/${maxPlayers}
+
+Hosted by **${STAFF_ROLE}**
+`)
+.setImage(REGISTER_IMG)
+.setFooter(footer())
 
 const row=new ActionRowBuilder().addComponents(
 
@@ -388,7 +352,7 @@ new ButtonBuilder()
 
 )
 
-registerMessage.edit({components:[row]}).catch(()=>{})
+registerMessage.edit({embeds:[embed],components:[row]}).catch(()=>{})
 
 }
 
