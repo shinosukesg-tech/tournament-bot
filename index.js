@@ -1,9 +1,5 @@
 require("dotenv").config();
 
-/* ===== CRASH PROTECTION ===== */
-process.on("unhandledRejection", err => console.error(err));
-process.on("uncaughtException", err => console.error(err));
-
 /* ================= UPTIME ================= */
 
 const express = require("express");
@@ -262,6 +258,8 @@ registerMessage=await message.channel.send({embeds:[embed],components:[row]})
 
 if(cmd==="start"){
 
+if(players.length<2) return message.channel.send("Not enough players")
+
 let shuffled=[...players].sort(()=>Math.random()-0.5)
 
 matches=[]
@@ -300,11 +298,15 @@ if(winners.length<=1){
 let win=await client.users.fetch(winners[0])
 
 const embed=new EmbedBuilder()
+
 .setTitle("🏆 Tournament Winner")
+
 .setThumbnail(win.displayAvatarURL({dynamic:true}))
+
 .setDescription(`🎉 Winner: **${win.username}**`)
 
 message.channel.send({embeds:[embed]})
+
 return
 }
 
@@ -335,8 +337,6 @@ if(cmd==="code"){
 let code=args[0]
 let user=message.mentions.users.first()
 if(!code||!user) return
-
-if(matches.length === 0) return message.channel.send("Tournament not started.")
 
 let match=matches.find(m=>m.p1==user.id||m.p2==user.id)
 if(!match) return
@@ -413,18 +413,28 @@ type:ChannelType.GuildCategory
 
 let modRole=guild.roles.cache.find(r=>r.name===MOD_ROLE)
 
+let ticketName=`${interaction.customId}_${interaction.user.username}`
+
+let perms=[
+{ id:guild.id, deny:[PermissionsBitField.Flags.ViewChannel] },
+{ id:interaction.user.id, allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages] }
+]
+
+if(modRole){
+perms.push({
+id:modRole.id,
+allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
+})
+}
+
 let channel=await guild.channels.create({
 
-name:`${interaction.customId}-${interaction.user.username}`,
+name:ticketName,
 
 type:ChannelType.GuildText,
 parent:category.id,
 
-permissionOverwrites:[
-{ id:guild.id, deny:[PermissionsBitField.Flags.ViewChannel] },
-{ id:interaction.user.id, allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages] },
-{ id:modRole.id, allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages] }
-]
+permissionOverwrites:perms
 
 })
 
@@ -462,7 +472,7 @@ new ButtonBuilder()
 
 )
 
-registerMessage.edit({components:[row]})
+registerMessage.edit({components:[row]}).catch(()=>{})
 
 }
 
@@ -484,22 +494,21 @@ desc+=`**Match ${i+1}**\n${p1} ${VS} ${p2}\n\n`
 const embed=new EmbedBuilder()
 
 .setTitle(`🏆 Round ${round}`)
+
 .setDescription(desc)
+
 .setImage(BRACKET_IMG)
 
 if(!bracketMessage){
+
 bracketMessage=await channel.send({embeds:[embed]})
+
 }else{
-bracketMessage.edit({embeds:[embed]})
-}
+
+bracketMessage.edit({embeds:[embed]}).catch(()=>{})
 
 }
 
-/* ================= LOGIN ================= */
-
-if(!process.env.TOKEN){
-console.log("TOKEN missing");
-process.exit(1);
 }
 
-client.login(process.env.TOKEN).catch(console.error)
+client.login(process.env.TOKEN)
