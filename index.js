@@ -126,6 +126,8 @@ if(cmd==="start"){
 
 if(!message.member.roles.cache.find(r=>r.name===STAFF_ROLE)) return
 
+await message.delete().catch(()=>{})
+
 matches=[]
 completedMatches=[]
 winners=[]
@@ -151,6 +153,8 @@ sendBracket(message.channel)
 
 if(cmd==="code"){
 
+await message.delete().catch(()=>{})
+
 let code=args[0]
 let player=message.mentions.users.first()
 
@@ -158,7 +162,7 @@ if(!code || !player) return
 
 let match=matches.find(m=>m.p1===player.id || m.p2===player.id)
 
-if(!match) return message.reply("Player not in match")
+if(!match) return
 
 let p1=await client.users.fetch(match.p1)
 let p2=match.p2==="BYE" ? null : await client.users.fetch(match.p2)
@@ -179,13 +183,13 @@ ${code}
 p1.send({embeds:[embed]}).catch(()=>{})
 if(p2) p2.send({embeds:[embed]}).catch(()=>{})
 
-message.reply("Code sent")
-
 }
 
 /* ================= QUALIFY ================= */
 
 if(cmd==="qual"){
+
+await message.delete().catch(()=>{})
 
 let player=message.mentions.users.first()
 if(!player) return
@@ -200,8 +204,6 @@ completedMatches.push(matchIndex)
 
 saveTournament()
 
-message.reply(`${player.username} qualified`)
-
 sendBracket(message.channel)
 
 }
@@ -210,12 +212,22 @@ sendBracket(message.channel)
 
 if(cmd==="next"){
 
-if(winners.length < matches.length)
-return message.reply("All matches not finished")
+await message.delete().catch(()=>{})
+
+if(winners.length < matches.length) return
 
 if(winners.length===1){
 
-message.channel.send(`🏆 Tournament Winner: <@${winners[0]}>`)
+const winnerUser = await client.users.fetch(winners[0])
+
+const embed = new EmbedBuilder()
+
+.setTitle("🏆 Tournament Winner")
+.setDescription(`Congratulations **${winnerUser.username}**!`)
+.setThumbnail(winnerUser.displayAvatarURL({dynamic:true}))
+.setFooter(footer())
+
+message.channel.send({embeds:[embed]})
 
 players=[]
 matches=[]
