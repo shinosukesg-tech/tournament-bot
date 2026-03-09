@@ -52,6 +52,8 @@ const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1
 const TICKET_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
 const BRACKET_IMG="https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png"
 
+const FOOTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480640926543118426/image0.jpg?ex=69b069d1&is=69af1851&hm=72ac492d223bdcb556c8cc21720cd476614fad2ab236a26eba315f3b1696db63&"
+
 /* ================= DATA ================= */
 
 let players=[]
@@ -67,6 +69,15 @@ let prizeName="Unknown"
 
 let registerMessage=null
 let bracketMessage=null
+
+/* ================= TIME FOOTER ================= */
+
+function footer(){
+const d=new Date()
+const time=d.toLocaleTimeString()
+const day=d.toLocaleDateString(undefined,{weekday:"long"})
+return {text:`ShinosukeSG | ${time} ${day}`,iconURL:FOOTER_IMG}
+}
 
 /* ================= WELCOME ================= */
 
@@ -118,6 +129,7 @@ ${days} days
 🎭 **Display Name**
 ${member.displayName}
 `)
+.setFooter(footer())
 
 channel.send({content:`Welcome ${member}`,embeds:[embed]})
 
@@ -161,8 +173,7 @@ const embed=new EmbedBuilder()
 🧰 **Utility**
 \`!embedm\` create custom embed
 `)
-
-.setFooter({text:"Tournament Bot"})
+.setFooter(footer())
 
 message.channel.send({embeds:[embed]})
 
@@ -178,28 +189,15 @@ let title="Embed"
 let desc="No description"
 let img=null
 
-let t=text.split(" t ")[1]?.split(" d ")[0]
-let d=text.split(" d ")[1]
-
-if(t) title=t
-if(d){
-
-let parts=d.split(" ")
-let last=parts[parts.length-1]
-
-if(last.startsWith("http")){
-img=last
-parts.pop()
-}
-
-desc=parts.join(" ")
-}
+if(text.includes(" t ")) title=text.split(" t ")[1]?.split(" d ")[0]||title
+if(text.includes(" d ")) desc=text.split(" d ")[1]?.split(" I ")[0]||desc
+if(text.includes(" I ")) img=text.split(" I ")[1]
 
 const embed=new EmbedBuilder()
-
 .setTitle(title)
 .setDescription(desc)
 .setColor("#6ec1ff")
+.setFooter(footer())
 
 if(img) embed.setImage(img)
 
@@ -220,7 +218,7 @@ welcomeData[message.guild.id]=channel.id
 saveWelcome()
 
 message.channel.send({embeds:[
-new EmbedBuilder().setColor("Green").setDescription("✅ Welcome channel set")
+new EmbedBuilder().setColor("Green").setDescription("✅ Welcome channel set").setFooter(footer())
 ]})
 
 }
@@ -238,8 +236,8 @@ const embed=new EmbedBuilder()
 📋 **Apply** → Staff application
 🎁 **Reward** → Claim reward
 `)
-
 .setImage(TICKET_IMG)
+.setFooter(footer())
 
 const row=new ActionRowBuilder().addComponents(
 
@@ -296,8 +294,8 @@ const embed=new EmbedBuilder()
 👤 Players: 0/${maxPlayers}
 Hosted by **${STAFF_ROLE}**
 `)
-
 .setImage(REGISTER_IMG)
+.setFooter(footer())
 
 const row=new ActionRowBuilder().addComponents(
 
@@ -383,6 +381,7 @@ const embed=new EmbedBuilder()
 .setTitle("🏆 Tournament Winner")
 .setThumbnail(win.displayAvatarURL({dynamic:true}))
 .setDescription(`🎉 Winner: **${win.username}**`)
+.setFooter(footer())
 
 message.channel.send({embeds:[embed]})
 return
@@ -435,8 +434,8 @@ Room Code
 ${code}
 \`\`\`
 `)
-
 .setImage(BRACKET_IMG)
+.setFooter(footer())
 
 p1.send({embeds:[embed]}).catch(()=>{})
 if(p2) p2.send({embeds:[embed]}).catch(()=>{})
@@ -453,7 +452,9 @@ if(!interaction.isButton()) return
 
 if(interaction.customId==="register"){
 
-if(players.includes(interaction.user.id)) return
+if(players.includes(interaction.user.id)){
+return interaction.reply({content:"Already registered",ephemeral:true})
+}
 
 players.push(interaction.user.id)
 updateRegister()
@@ -469,6 +470,55 @@ updateRegister()
 
 interaction.reply({content:"Removed",ephemeral:true})
 
+}
+
+/* ================= TICKETS ================= */
+
+if(["support","apply","reward"].includes(interaction.customId)){
+
+const guild=interaction.guild
+const modRole=guild.roles.cache.find(r=>r.name===MOD_ROLE)
+
+const channel=await guild.channels.create({
+name:`ticket-${interaction.user.username}`,
+type:ChannelType.GuildText,
+permissionOverwrites:[
+{
+id:guild.id,
+deny:[PermissionsBitField.Flags.ViewChannel]
+},
+{
+id:interaction.user.id,
+allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
+},
+{
+id:modRole?.id,
+allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
+}
+]
+})
+
+const embed=new EmbedBuilder()
+.setTitle("🎫 Ticket Opened")
+.setDescription(`User: ${interaction.user}\nModerator will assist shortly.`)
+.setImage(TICKET_IMG)
+.setFooter(footer())
+
+const row=new ActionRowBuilder().addComponents(
+new ButtonBuilder()
+.setCustomId("close_ticket")
+.setLabel("Close Ticket")
+.setStyle(ButtonStyle.Danger)
+)
+
+await channel.send({content:`${interaction.user}`,embeds:[embed],components:[row]})
+
+interaction.reply({content:`Ticket created: ${channel}`,ephemeral:true})
+
+}
+
+if(interaction.customId==="close_ticket"){
+interaction.channel.delete().catch(()=>{})
 }
 
 })
@@ -527,6 +577,7 @@ const embed=new EmbedBuilder()
 .setTitle(`🏆 Round ${round}`)
 .setDescription(desc)
 .setImage(BRACKET_IMG)
+.setFooter(footer())
 
 if(!bracketMessage){
 bracketMessage=await channel.send({embeds:[embed]})
