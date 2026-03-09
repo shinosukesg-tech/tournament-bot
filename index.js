@@ -44,7 +44,7 @@ const STAFF_ROLE="Tournament Staff"
 const CHECK="<:check:1480513506871742575>"
 const CROSS="<:sg_cross:1480513567655592037>"
 const VS="<:VS:1477014161484677150>"
-const DONE="✅"
+const DONE="<:check:1480513506871742575>"
 
 /* ================= IMAGES ================= */
 
@@ -379,6 +379,8 @@ client.on("interactionCreate", async interaction=>{
 
 if(!interaction.isButton()) return
 
+/* REGISTER BUTTON */
+
 if(interaction.customId==="register"){
 
 if(players.includes(interaction.user.id)) return
@@ -390,12 +392,60 @@ interaction.reply({content:"Registered",ephemeral:true})
 
 }
 
+/* UNREGISTER BUTTON */
+
 if(interaction.customId==="unregister"){
 
 players=players.filter(p=>p!==interaction.user.id)
 updateRegister()
 
 interaction.reply({content:"Removed",ephemeral:true})
+
+}
+
+/* TICKET BUTTONS FIX */
+
+if(["support","apply","reward"].includes(interaction.customId)){
+
+await interaction.deferReply({ephemeral:true})
+
+let guild=interaction.guild
+
+let category=guild.channels.cache.find(c=>c.name==="ShinTours Support")
+
+if(!category){
+
+category=await guild.channels.create({
+name:"ShinTours Support",
+type:ChannelType.GuildCategory
+})
+
+}
+
+let modRole=guild.roles.cache.find(r=>r.name===MOD_ROLE)
+
+let perms=[
+{ id:guild.id, deny:[PermissionsBitField.Flags.ViewChannel] },
+{ id:interaction.user.id, allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages] }
+]
+
+if(modRole){
+perms.push({
+id:modRole.id,
+allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
+})
+}
+
+let channel=await guild.channels.create({
+
+name:`${interaction.customId}-${interaction.user.username}`,
+type:ChannelType.GuildText,
+parent:category.id,
+permissionOverwrites:perms
+
+})
+
+interaction.editReply({content:`🎫 Ticket created: ${channel}`})
 
 }
 
