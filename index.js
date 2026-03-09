@@ -44,7 +44,7 @@ const STAFF_ROLE="Tournament Staff"
 const CHECK="<:check:1480513506871742575>"
 const CROSS="<:sg_cross:1480513567655592037>"
 const VS="<:VS:1477014161484677150>"
-const DONE="<:check:1480513506871742575>"
+const DONE="✅"
 
 /* ================= IMAGES ================= */
 
@@ -134,6 +134,78 @@ const args = message.content.slice(PREFIX.length).trim().split(/ +/)
 const cmd = args.shift().toLowerCase()
 
 message.delete().catch(()=>{})
+
+/* ================= HELP ================= */
+
+if(cmd==="help"){
+
+const embed=new EmbedBuilder()
+
+.setTitle("📜 Bot Commands")
+.setColor("#6ec1ff")
+
+.setDescription(`
+🏆 **Tournament**
+\`!1v1\` create tournament
+\`!start\` start bracket
+\`!qual\` qualify player
+\`!next\` next round
+\`!code\` send room code
+
+🎫 **Tickets**
+\`!ticketpanel\`
+
+👋 **Welcome**
+\`!welcome #channel\`
+
+🧰 **Utility**
+\`!embedm\` create custom embed
+`)
+
+.setFooter({text:"Tournament Bot"})
+
+message.channel.send({embeds:[embed]})
+
+}
+
+/* ================= EMBED MAKER ================= */
+
+if(cmd==="embedm"){
+
+let text=args.join(" ")
+
+let title="Embed"
+let desc="No description"
+let img=null
+
+let t=text.split(" t ")[1]?.split(" d ")[0]
+let d=text.split(" d ")[1]
+
+if(t) title=t
+if(d){
+
+let parts=d.split(" ")
+let last=parts[parts.length-1]
+
+if(last.startsWith("http")){
+img=last
+parts.pop()
+}
+
+desc=parts.join(" ")
+}
+
+const embed=new EmbedBuilder()
+
+.setTitle(title)
+.setDescription(desc)
+.setColor("#6ec1ff")
+
+if(img) embed.setImage(img)
+
+message.channel.send({embeds:[embed]})
+
+}
 
 /* ================= WELCOME SET ================= */
 
@@ -379,8 +451,6 @@ client.on("interactionCreate", async interaction=>{
 
 if(!interaction.isButton()) return
 
-/* REGISTER BUTTON */
-
 if(interaction.customId==="register"){
 
 if(players.includes(interaction.user.id)) return
@@ -392,60 +462,12 @@ interaction.reply({content:"Registered",ephemeral:true})
 
 }
 
-/* UNREGISTER BUTTON */
-
 if(interaction.customId==="unregister"){
 
 players=players.filter(p=>p!==interaction.user.id)
 updateRegister()
 
 interaction.reply({content:"Removed",ephemeral:true})
-
-}
-
-/* TICKET BUTTONS FIX */
-
-if(["support","apply","reward"].includes(interaction.customId)){
-
-await interaction.deferReply({ephemeral:true})
-
-let guild=interaction.guild
-
-let category=guild.channels.cache.find(c=>c.name==="ShinTours Support")
-
-if(!category){
-
-category=await guild.channels.create({
-name:"ShinTours Support",
-type:ChannelType.GuildCategory
-})
-
-}
-
-let modRole=guild.roles.cache.find(r=>r.name===MOD_ROLE)
-
-let perms=[
-{ id:guild.id, deny:[PermissionsBitField.Flags.ViewChannel] },
-{ id:interaction.user.id, allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages] }
-]
-
-if(modRole){
-perms.push({
-id:modRole.id,
-allow:[PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.SendMessages]
-})
-}
-
-let channel=await guild.channels.create({
-
-name:`${interaction.customId}-${interaction.user.username}`,
-type:ChannelType.GuildText,
-parent:category.id,
-permissionOverwrites:perms
-
-})
-
-interaction.editReply({content:`🎫 Ticket created: ${channel}`})
 
 }
 
