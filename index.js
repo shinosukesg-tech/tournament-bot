@@ -32,7 +32,7 @@ GatewayIntentBits.GuildMembers
 ]
 })
 
-const PREFIX=";"
+const PREFIX="!"
 
 /* ================= ROLES ================= */
 
@@ -54,6 +54,7 @@ let round=1
 let maxPlayers=16
 
 let serverName="Unknown"
+let mapName="Unknown"
 let prizeName="Unknown"
 
 let registerMessage=null
@@ -107,8 +108,6 @@ const embed = new EmbedBuilder()
 
 .setColor("Green")
 
-.setFooter({ text: `Welcome ${member.user.username}!` })
-
 channel.send({embeds:[embed]})
 
 })
@@ -131,47 +130,38 @@ if(cmd==="help"){
 
 const embed=new EmbedBuilder()
 
-.setTitle("📜 Bot Commands")
+.setTitle("📜 Tournament Bot Commands")
 
 .setColor("Blue")
 
 .setDescription(`
-🏆 **Tournament**
-;1v1 <players> <server> <prize>
-;start
-;code <room> @player
-;qual @player
-;next
+🏆 **Tournament Commands**
 
-🎫 **Support**
-;ticketpanel
+🎮 **Create Tournament**
+\`!1v1 <players> <server> <map> <reward>\`
 
-⚙ **Setup**
-;welcome #channel
+▶ **Start Tournament**
+\`!start\`
+
+🎯 **Qualify Player**
+\`!qual @player\`
+
+🤖 **Add BYE**
+\`!qual bye1\`
+
+🔁 **Next Round**
+\`!next\`
+
+🎟 **Support Panel**
+\`!ticketpanel\`
+
+⚙ **Set Welcome**
+\`!welcome #channel\`
 `)
 
+.setImage(BRACKET_IMG)
+
 message.channel.send({embeds:[embed]})
-
-}
-
-/* ================= SET WELCOME ================= */
-
-if(cmd==="welcome"){
-
-if(!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
-return
-
-let channel=message.mentions.channels.first()
-if(!channel) return
-
-welcomeData[message.guild.id]=channel.id
-saveWelcome()
-
-message.channel.send({embeds:[
-new EmbedBuilder()
-.setColor("Green")
-.setDescription(`✅ Welcome channel set to ${channel}`)
-]})
 
 }
 
@@ -184,7 +174,8 @@ return
 
 maxPlayers=parseInt(args[0]) || 16
 serverName=args[1] || "Unknown"
-prizeName=args[2] || "Unknown"
+mapName=args[2] || "Unknown"
+prizeName=args[3] || "Unknown"
 
 players=[]
 matches=[]
@@ -196,11 +187,11 @@ const embed=new EmbedBuilder()
 .setTitle("🏆 Tournament Registration")
 
 .setDescription(`
-🎮 **Server:** ${serverName}
-🎁 **Prize:** ${prizeName}
+🌍 **Server:** ${serverName}
+🗺 **Map:** ${mapName}
+🎁 **Reward:** ${prizeName}
 
-👥 Players: **0/${maxPlayers}**
-Status: **OPEN**
+👤 **Players:** 0/${maxPlayers}
 `)
 
 .setImage(REGISTER_IMG)
@@ -215,7 +206,7 @@ new ButtonBuilder()
 
 new ButtonBuilder()
 .setCustomId("count")
-.setLabel(`0/${maxPlayers}`)
+.setLabel(`👤 0/${maxPlayers}`)
 .setStyle(ButtonStyle.Secondary)
 .setDisabled(true),
 
@@ -241,19 +232,27 @@ if(cmd==="start"){
 if(!message.member.roles.cache.find(r=>r.name===STAFF_ROLE))
 return
 
-if(players.length < 2)
-return message.channel.send({embeds:[
-new EmbedBuilder().setColor("Red").setDescription("Not enough players.")
-]})
-
 let shuffled=[...players].sort(()=>Math.random()-0.5)
 
 matches=[]
 
 for(let i=0;i<shuffled.length;i+=2){
 
-if(shuffled[i+1])
-matches.push({p1:shuffled[i],p2:shuffled[i+1]})
+if(shuffled[i+1]){
+
+matches.push({
+p1:shuffled[i],
+p2:shuffled[i+1]
+})
+
+}else{
+
+matches.push({
+p1:shuffled[i],
+p2:"BYE"
+})
+
+}
 
 }
 
@@ -265,24 +264,21 @@ sendBracket(message.channel)
 
 if(cmd==="qual"){
 
+if(args[0]==="bye1"){
+winners.push("BYE")
+return
+}
+
 let user=message.mentions.users.first()
 if(!user) return
 
 winners.push(user.id)
-
-message.channel.send({embeds:[
-new EmbedBuilder()
-.setColor("Green")
-.setDescription(`✅ ${user} qualified`)
-]})
 
 }
 
 /* ================= NEXT ROUND ================= */
 
 if(cmd==="next"){
-
-if(winners.length<2) return
 
 let list=[...winners]
 
@@ -292,85 +288,25 @@ round++
 
 for(let i=0;i<list.length;i+=2){
 
-if(list[i+1])
-matches.push({p1:list[i],p2:list[i+1]})
+if(list[i+1]){
+
+matches.push({
+p1:list[i],
+p2:list[i+1]
+})
+
+}else{
+
+matches.push({
+p1:list[i],
+p2:"BYE"
+})
+
+}
 
 }
 
 sendBracket(message.channel)
-
-}
-
-/* ================= CODE ================= */
-
-if(cmd==="code"){
-
-let room=args[0]
-let user=message.mentions.users.first()
-
-if(!room||!user) return
-
-let match=matches.find(m=>m.p1==user.id||m.p2==user.id)
-if(!match) return
-
-let p1=await client.users.fetch(match.p1)
-let p2=await client.users.fetch(match.p2)
-
-const embed=new EmbedBuilder()
-
-.setTitle("🎮 Match Room")
-
-.setDescription(`
-${p1.username} VS ${p2.username}
-
-Room Code
-\`\`\`
-${room}
-\`\`\`
-`)
-
-p1.send({embeds:[embed]}).catch(()=>{})
-p2.send({embeds:[embed]}).catch(()=>{})
-
-}
-
-/* ================= TICKET PANEL ================= */
-
-if(cmd==="ticketpanel"){
-
-const embed=new EmbedBuilder()
-
-.setTitle("🎫 Support Panel")
-
-.setDescription(`
-🛡 Support
-📋 Apply
-🎁 Reward
-`)
-
-const row=new ActionRowBuilder().addComponents(
-
-new ButtonBuilder()
-.setCustomId("support")
-.setLabel("Support")
-.setEmoji("🛡")
-.setStyle(ButtonStyle.Danger),
-
-new ButtonBuilder()
-.setCustomId("apply")
-.setLabel("Apply")
-.setEmoji("📋")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("reward")
-.setLabel("Reward")
-.setEmoji("🎁")
-.setStyle(ButtonStyle.Primary)
-
-)
-
-message.channel.send({embeds:[embed],components:[row]})
 
 }
 
@@ -382,15 +318,10 @@ client.on("interactionCreate", async interaction=>{
 
 if(!interaction.isButton()) return
 
-/* REGISTER */
-
 if(interaction.customId==="register"){
 
 if(players.includes(interaction.user.id))
-return interaction.reply({content:"Already joined",ephemeral:true})
-
-if(players.length>=maxPlayers)
-return interaction.reply({content:"Tournament full",ephemeral:true})
+return interaction.reply({content:"Joined",ephemeral:true})
 
 players.push(interaction.user.id)
 
@@ -400,19 +331,17 @@ interaction.reply({content:"Registered",ephemeral:true})
 
 }
 
-/* UNREGISTER */
-
 if(interaction.customId==="unregister"){
 
 players=players.filter(p=>p!==interaction.user.id)
 
 updateRegister()
 
-interaction.reply({content:"Unregistered",ephemeral:true})
+interaction.reply({content:"Removed",ephemeral:true})
 
 }
 
-/* TICKETS */
+/* ================= TICKETS ================= */
 
 if(["support","apply","reward"].includes(interaction.customId)){
 
@@ -484,7 +413,7 @@ new ButtonBuilder()
 
 new ButtonBuilder()
 .setCustomId("count")
-.setLabel(`${players.length}/${maxPlayers}`)
+.setLabel(`👤 ${players.length}/${maxPlayers}`)
 .setStyle(ButtonStyle.Secondary)
 .setDisabled(true),
 
@@ -513,7 +442,12 @@ let embed=new EmbedBuilder()
 let desc=""
 
 matches.forEach((m,i)=>{
-desc+=`Match ${i+1}\n<@${m.p1}> VS <@${m.p2}>\n\n`
+
+let p1=m.p1==="BYE"?"🤖 BYE":`<@${m.p1}>`
+let p2=m.p2==="BYE"?"🤖 BYE":`<@${m.p2}>`
+
+desc+=`Match ${i+1}\n${p1} VS ${p2}\n\n`
+
 })
 
 embed.setDescription(desc)
