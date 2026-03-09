@@ -1,5 +1,9 @@
 require("dotenv").config();
 
+/* ===== CRASH PROTECTION ===== */
+process.on("unhandledRejection", err => console.error(err));
+process.on("uncaughtException", err => console.error(err));
+
 /* ================= UPTIME ================= */
 
 const express = require("express");
@@ -265,13 +269,9 @@ matches=[]
 for(let i=0;i<shuffled.length;i+=2){
 
 if(shuffled[i+1]){
-
 matches.push({p1:shuffled[i],p2:shuffled[i+1]})
-
 }else{
-
 matches.push({p1:shuffled[i],p2:"BYE"})
-
 }
 
 }
@@ -300,15 +300,11 @@ if(winners.length<=1){
 let win=await client.users.fetch(winners[0])
 
 const embed=new EmbedBuilder()
-
 .setTitle("🏆 Tournament Winner")
-
 .setThumbnail(win.displayAvatarURL({dynamic:true}))
-
 .setDescription(`🎉 Winner: **${win.username}**`)
 
 message.channel.send({embeds:[embed]})
-
 return
 }
 
@@ -321,13 +317,9 @@ round++
 for(let i=0;i<list.length;i+=2){
 
 if(list[i+1]){
-
 matches.push({p1:list[i],p2:list[i+1]})
-
 }else{
-
 matches.push({p1:list[i],p2:"BYE"})
-
 }
 
 }
@@ -343,6 +335,8 @@ if(cmd==="code"){
 let code=args[0]
 let user=message.mentions.users.first()
 if(!code||!user) return
+
+if(matches.length === 0) return message.channel.send("Tournament not started.")
 
 let match=matches.find(m=>m.p1==user.id||m.p2==user.id)
 if(!match) return
@@ -444,6 +438,8 @@ interaction.reply({content:`Ticket created: ${channel}`,ephemeral:true})
 
 function updateRegister(){
 
+if(!registerMessage) return
+
 const row=new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
@@ -488,21 +484,22 @@ desc+=`**Match ${i+1}**\n${p1} ${VS} ${p2}\n\n`
 const embed=new EmbedBuilder()
 
 .setTitle(`🏆 Round ${round}`)
-
 .setDescription(desc)
-
 .setImage(BRACKET_IMG)
 
 if(!bracketMessage){
-
 bracketMessage=await channel.send({embeds:[embed]})
-
 }else{
-
 bracketMessage.edit({embeds:[embed]})
-
 }
 
 }
 
-client.login(process.env.TOKEN)
+/* ================= LOGIN ================= */
+
+if(!process.env.TOKEN){
+console.log("TOKEN missing");
+process.exit(1);
+}
+
+client.login(process.env.TOKEN).catch(console.error)
