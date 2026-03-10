@@ -39,6 +39,10 @@ const PREFIX="!"
 const MOD_ROLE="Moderator"
 const STAFF_ROLE="Tournament Staff"
 
+/* ================= COMMAND CONTROL ================= */
+
+let disabledChannels = new Set()
+
 /* ================= EMOJIS ================= */
 
 const CHECK="<:check:1480513506871742575>"
@@ -124,12 +128,9 @@ const embed=new EmbedBuilder()
 .setTitle("👋 Welcome")
 .setDescription(`Welcome ${member} to **${member.guild.name}**`)
 .addFields(
-
 {name:"🆔 User ID",value:member.id},
 {name:"📅 Account Created",value:`<t:${created}:F>`}
-
 )
-
 .setThumbnail(member.user.displayAvatarURL())
 .setFooter(footer())
 
@@ -142,12 +143,29 @@ channel.send({content:`Welcome ${member}`,embeds:[embed]})
 client.on("messageCreate", async message=>{
 
 if(message.author.bot) return
+
+if(disabledChannels.has(message.channel.id) && !message.member.roles.cache.find(r=>r.name===MOD_ROLE)) return
+
 if(!message.content.startsWith(PREFIX)) return
 
 const args = message.content.slice(PREFIX.length).trim().split(/ +/)
 const cmd = args.shift().toLowerCase()
 
 message.delete().catch(()=>{})
+
+/* ================= CHANNEL CONTROL ================= */
+
+if(cmd==="no"){
+if(!message.member.roles.cache.find(r=>r.name===MOD_ROLE)) return
+disabledChannels.add(message.channel.id)
+return message.channel.send("❌ Commands disabled here")
+}
+
+if(cmd==="yes"){
+if(!message.member.roles.cache.find(r=>r.name===MOD_ROLE)) return
+disabledChannels.delete(message.channel.id)
+return message.channel.send("✅ Commands enabled here")
+}
 
 /* ================= HELP ================= */
 
@@ -212,20 +230,9 @@ const embed=new EmbedBuilder()
 
 const row=new ActionRowBuilder().addComponents(
 
-new ButtonBuilder()
-.setCustomId("support")
-.setLabel("Support")
-.setStyle(ButtonStyle.Danger),
-
-new ButtonBuilder()
-.setCustomId("apply")
-.setLabel("Apply")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("reward")
-.setLabel("Reward")
-.setStyle(ButtonStyle.Primary)
+new ButtonBuilder().setCustomId("support").setLabel("Support").setStyle(ButtonStyle.Danger),
+new ButtonBuilder().setCustomId("apply").setLabel("Apply").setStyle(ButtonStyle.Success),
+new ButtonBuilder().setCustomId("reward").setLabel("Reward").setStyle(ButtonStyle.Primary)
 
 )
 
@@ -275,23 +282,9 @@ Rewards
 
 const row=new ActionRowBuilder().addComponents(
 
-new ButtonBuilder()
-.setCustomId("register")
-.setLabel("Register")
-.setEmoji(CHECK)
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("count")
-.setLabel(`0/${maxPlayers}`)
-.setStyle(ButtonStyle.Secondary)
-.setDisabled(true),
-
-new ButtonBuilder()
-.setCustomId("unregister")
-.setLabel("Unregister")
-.setEmoji(CROSS)
-.setStyle(ButtonStyle.Danger)
+new ButtonBuilder().setCustomId("register").setLabel("Register").setEmoji(CHECK).setStyle(ButtonStyle.Success),
+new ButtonBuilder().setCustomId("count").setLabel(`0/${maxPlayers}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
+new ButtonBuilder().setCustomId("unregister").setLabel("Unregister").setEmoji(CROSS).setStyle(ButtonStyle.Danger)
 
 )
 
@@ -299,89 +292,34 @@ registerMessage=await message.channel.send({embeds:[embed],components:[row]})
 
 }
 
-/* ================= CODE ================= */
+/* ================= NEXT ================= */
 
-if(cmd==="code"){
+if(cmd==="next"){
 
-let code=args[0]
+if(winners.length < 3) return message.channel.send("Not enough winners recorded.")
 
-let p1=message.mentions.users.first()
-let p2=message.mentions.users.last()
+let first = await client.users.fetch(winners[0])
+let second = await client.users.fetch(winners[1])
+let third = await client.users.fetch(winners[2])
 
-if(!p1 || !p2) return
+const embed = new EmbedBuilder()
 
-const embed=new EmbedBuilder()
+.setTitle("🏆 Winner of Tournament")
 
-.setTitle("🎮 Match Code")
+.setThumbnail(first.displayAvatarURL())
 
 .setDescription(`
-Players
-${p1} ${VS} ${p2}
+🥇 **${first.username}**
+Reward: **${rewards[0]}**
 
-Server: **${server}**
-Map: **${map}**
+🥈 ${second.username} — ${rewards[1]}
 
-Code
-\`\`\`
-${code}
-\`\`\`
+🥉 ${third.username} — ${rewards[2]}
 `)
 
 .setFooter(footer())
 
 message.channel.send({embeds:[embed]})
-
-}
-
-/* ================= START ================= */
-
-if(cmd==="start"){
-
-if(players.length<2) return
-
-let shuffled=[...players].sort(()=>Math.random()-0.5)
-
-matches=[]
-
-for(let i=0;i<shuffled.length;i+=2){
-
-matches.push({p1:shuffled[i],p2:shuffled[i+1] || "BYE"})
-
-}
-
-save(tournamentFile,{players,matches,winners,completedMatches,round,maxPlayers})
-
-sendBracket(message.channel)
-
-}
-
-/* ================= BYE ================= */
-
-if(cmd==="bye"){
-
-players.push("bye1")
-players.push("bye2")
-
-}
-
-/* ================= QUAL ================= */
-
-if(cmd==="qual"){
-
-let u=args[0]
-
-if(u==="bye1" || u==="bye2"){
-winners.push(u)
-}else{
-
-let user=message.mentions.users.first()
-if(!user) return
-
-winners.push(user.id)
-
-}
-
-sendBracket(message.channel)
 
 }
 
@@ -427,11 +365,24 @@ if(["support","apply","reward"].includes(interaction.customId)){
 const guild=interaction.guild
 const modRole=guild.roles.cache.find(r=>r.name===MOD_ROLE)
 
+/* category */
+
+let category=guild.channels.cache.find(c=>c.name==="ShinTours Support")
+
+if(!category){
+category=await guild.channels.create({
+name:"ShinTours Support",
+type:ChannelType.GuildCategory
+})
+}
+
 const channel=await guild.channels.create({
 
 name:`${interaction.customId}-${interaction.user.username}`,
 
 type:ChannelType.GuildText,
+
+parent:category.id,
 
 permissionOverwrites:[
 
@@ -504,13 +455,9 @@ const embed=new EmbedBuilder()
 .setFooter(footer())
 
 if(!bracketMessage){
-
 bracketMessage=await channel.send({embeds:[embed]})
-
 }else{
-
 bracketMessage.edit({embeds:[embed]})
-
 }
 
 }
