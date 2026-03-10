@@ -77,7 +77,7 @@ const VS="<:VS:1477014161484677150>"
 
 /* ========= IMAGES ========= */
 
-const REGISTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480640926543118426/image0.jpg"
+const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png?ex=69ad0a47&is=69abb8c7&hm=219288b707fdc90691a78a932f01de2892abaa70e4db792ebd5cfb04a1827374&20cd476614fad2ab236a26eba315f3b1696db63&"
 const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
 const FOOTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg"
 
@@ -391,3 +391,4 @@ channel.send({embeds:[embed]})
 /* ========= LOGIN ========= */
 
 client.login(process.env.TOKEN)
+
