@@ -1,1 +1,8 @@
-{}
+{
+  "players": [],
+  "matches": [],
+  "winners": [],
+  "round": 1,
+  "maxPlayers": 16,
+  "rewards": []
+}
