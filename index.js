@@ -1,302 +1,443 @@
-require("dotenv").config();
-const express = require("express");
+require("dotenv").config()
+
+/* ========= EXPRESS ========= */
+
+const express=require("express")
+const app=express()
+
+app.get("/",(req,res)=>res.send("Bot Running"))
+app.listen(process.env.PORT||3000)
+
+/* ========= DISCORD ========= */
+
 const {
-Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder,
-REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-PermissionFlagsBits
-} = require("discord.js");
-const fs = require("fs");
+Client,
+GatewayIntentBits,
+EmbedBuilder,
+ActionRowBuilder,
+ButtonBuilder,
+ButtonStyle,
+PermissionsBitField,
+ChannelType,
+REST,
+Routes
+}=require("discord.js")
 
-/* ================= WEB SERVER ================= */
+const fs=require("fs")
 
-const app = express();
-app.get("/", (req,res)=>res.send("Bot Online"));
-app.listen(process.env.PORT || 3000,"0.0.0.0");
+const commands=require("./commands.json")
+const welcomeData=require("./welcome.json")
 
-/* ================= CONFIG ================= */
-
-const PREFIX = "!";
-const WELCOME_CHANNEL_ID = "WELCOME_CHANNEL_ID";
-const TICKET_CATEGORY_ID = "TICKET_CATEGORY_ID";
-const MOD_ROLE_ID = "MODERATOR_ROLE_ID";
-
-const REGISTER_LINK = "YOUR_REGISTER_LINK";
-const BRACKET_LINK = "YOUR_BRACKET_LINK";
-
-/* ================= CLIENT ================= */
-
-const client = new Client({
+const client=new Client({
 intents:[
 GatewayIntentBits.Guilds,
 GatewayIntentBits.GuildMessages,
 GatewayIntentBits.MessageContent,
 GatewayIntentBits.GuildMembers
-]});
+]
+})
 
-/* ================= STORAGE ================= */
+const PREFIX="!"
 
-const file="./tournament.json";
+/* ========= IDs ========= */
 
-function load(){
-if(!fs.existsSync(file)) return {players:[],round:1};
-return JSON.parse(fs.readFileSync(file));
-}
+const WELCOME_CHANNEL="1465234114318696498"
+const TICKET_CHANNEL="1460635938727399537"
+const MOD_ROLE="1429913618211672125"
 
-function save(d){
-fs.writeFileSync(file,JSON.stringify(d,null,2));
-}
+/* ========= EMOJIS ========= */
 
-let db=load();
+const CHECK="<:check:1480513506871742575>"
+const CROSS="<:sg_cross:1480513567655592037>"
+const VS="<:VS:1477014161484677150>"
 
-/* ================= READY ================= */
+/* ========= FILES ========= */
 
-client.once("ready",async()=>{
+const file="./tournament.json"
 
-console.log(`Logged in as ${client.user.tag}`);
+function load(){return JSON.parse(fs.readFileSync(file))}
+function save(d){fs.writeFileSync(file,JSON.stringify(d,null,2))}
 
-const commands=[
+let db=load()
 
-new SlashCommandBuilder()
-.setName("help")
-.setDescription("Commands"),
+let players=db.players
+let matches=db.matches
+let winners=db.winners
+let round=db.round
+let maxPlayers=db.maxPlayers
+let rewards=db.rewards
 
-new SlashCommandBuilder()
-.setName("1v1")
-.setDescription("Tournament register panel"),
+/* ========= READY ========= */
 
-new SlashCommandBuilder()
-.setName("start")
-.setDescription("Start tournament"),
+client.on("ready",async()=>{
 
-new SlashCommandBuilder()
-.setName("next")
-.setDescription("Next round"),
+console.log("Bot Ready")
 
-new SlashCommandBuilder()
-.setName("ticket-panel")
-.setDescription("Send ticket panel")
-.setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-new SlashCommandBuilder()
-.setName("winner")
-.setDescription("Announce winners")
-.addUserOption(o=>o.setName("first").setDescription("1st").setRequired(true))
-.addUserOption(o=>o.setName("second").setDescription("2nd").setRequired(true))
-.addUserOption(o=>o.setName("third").setDescription("3rd").setRequired(true))
-
-].map(c=>c.toJSON());
-
-const rest=new REST({version:"10"}).setToken(process.env.TOKEN);
+const rest=new REST({version:"10"}).setToken(process.env.TOKEN)
 
 await rest.put(
 Routes.applicationCommands(client.user.id),
-{body:commands}
-);
+{body:commands.commands}
+)
 
-});
+})
 
-/* ================= AUTO WELCOME ================= */
+/* ========= WELCOME ========= */
 
-client.on("guildMemberAdd",async member=>{
+client.on("guildMemberAdd",member=>{
 
-const ch=member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
-if(!ch) return;
+let ch=member.guild.channels.cache.get(WELCOME_CHANNEL)
+if(!ch) return
 
 const embed=new EmbedBuilder()
 
-.setColor("#5865F2")
-.setTitle(`Welcome ${member.user.username}`)
+.setTitle(`${welcomeData.title} ${member.user.username}`)
 .setThumbnail(member.user.displayAvatarURL())
-.setDescription(`Welcome **${member.user.username}** to the server!
 
-Have fun here! 🎉`)
-.addFields(
+.setDescription(`
+${welcomeData.emoji}
 
-{name:"ID",value:member.id},
+Welcome **${member.user.username}** to
+🏆 **${welcomeData.server}**
 
-{name:"Account Created",
-value:`<t:${Math.floor(member.user.createdTimestamp/1000)}:D>`}
+${welcomeData.message}
 
-);
+🆔 **User ID**
+${member.id}
+
+📅 **Account Created**
+${member.user.createdAt.toDateString()}
+
+⏳ **Account Age**
+${Math.floor((Date.now()-member.user.createdTimestamp)/86400000)} days
+
+🎭 **Display Name**
+${member.displayName}
+`)
 
 ch.send({
 content:`Welcome <@${member.id}>`,
 embeds:[embed]
-});
+})
 
-});
+})
 
-/* ================= TOURNAMENT PANEL ================= */
-
-function registerPanel(){
-
-const embed=new EmbedBuilder()
-
-.setTitle("🏆 Tournament Registration")
-.setDescription("Click below to register")
-
-const row=new ActionRowBuilder()
-.addComponents(
-
-new ButtonBuilder()
-.setLabel("Register")
-.setStyle(ButtonStyle.Link)
-.setURL(REGISTER_LINK),
-
-new ButtonBuilder()
-.setLabel("Bracket")
-.setStyle(ButtonStyle.Link)
-.setURL(BRACKET_LINK)
-
-);
-
-return {embeds:[embed],components:[row]};
-
-}
-
-/* ================= TICKET PANEL ================= */
-
-function ticketPanel(){
-
-const embed=new EmbedBuilder()
-
-.setTitle("🎫 Ticket System")
-
-.setDescription(`
-🔰 Support → Need help
-📋 Apply → Staff apply
-🎁 Reward → Claim reward
-`);
-
-const row=new ActionRowBuilder()
-
-.addComponents(
-
-new ButtonBuilder()
-.setCustomId("support")
-.setLabel("Support")
-.setStyle(ButtonStyle.Danger),
-
-new ButtonBuilder()
-.setCustomId("apply")
-.setLabel("Apply")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("reward")
-.setLabel("Reward")
-.setStyle(ButtonStyle.Primary)
-
-);
-
-return {embeds:[embed],components:[row]};
-
-}
-
-/* ================= BUTTONS ================= */
+/* ========= TICKET PANEL ========= */
 
 client.on("interactionCreate",async i=>{
 
 if(i.isButton()){
 
-let type=i.customId;
+if(i.customId==="ticket"){
 
-let channel=await i.guild.channels.create({
+let ch=await i.guild.channels.create({
 
-name:`${type}-${i.user.username}`,
+name:`ticket-${i.user.username}`,
 
-parent:TICKET_CATEGORY_ID,
+type:ChannelType.GuildText,
 
 permissionOverwrites:[
 
 {
 id:i.guild.id,
-deny:[PermissionFlagsBits.ViewChannel]
+deny:[PermissionsBitField.Flags.ViewChannel]
 },
 
 {
 id:i.user.id,
 allow:[
-PermissionFlagsBits.ViewChannel,
-PermissionFlagsBits.SendMessages
+PermissionsBitField.Flags.ViewChannel,
+PermissionsBitField.Flags.SendMessages
 ]
 },
 
 {
-id:MOD_ROLE_ID,
+id:MOD_ROLE,
 allow:[
-PermissionFlagsBits.ViewChannel,
-PermissionFlagsBits.SendMessages
+PermissionsBitField.Flags.ViewChannel,
+PermissionsBitField.Flags.SendMessages
 ]
 }
 
 ]
 
-});
+})
 
-i.reply({
-content:`Ticket created: ${channel}`,
-ephemeral:true
-});
+const row=new ActionRowBuilder().addComponents(
 
-}
+new ButtonBuilder()
+.setCustomId("close_ticket")
+.setLabel("Close Ticket")
+.setStyle(ButtonStyle.Danger)
 
-});
+)
 
-/* ================= COMMANDS ================= */
+ch.send({
+content:`Ticket for <@${i.user.id}>`,
+components:[row]
+})
 
-client.on("interactionCreate",async interaction=>{
-
-if(!interaction.isChatInputCommand()) return;
-
-const cmd=interaction.commandName;
-
-if(cmd==="help"){
-
-return interaction.reply("Commands: /1v1 /start /next /winner /ticket-panel");
+i.reply({content:`Ticket created: ${ch}`,ephemeral:true})
 
 }
 
-if(cmd==="1v1"){
+if(i.customId==="close_ticket"){
 
-return interaction.reply(registerPanel());
+if(!i.member.roles.cache.has(MOD_ROLE))
+return i.reply({content:"Moderator only",ephemeral:true})
 
-}
-
-if(cmd==="ticket-panel"){
-
-await interaction.reply({content:"Panel sent",ephemeral:true});
-
-return interaction.channel.send(ticketPanel());
+i.channel.delete()
 
 }
 
-if(cmd==="winner"){
+}
 
-let first=interaction.options.getUser("first");
-let second=interaction.options.getUser("second");
-let third=interaction.options.getUser("third");
+/* ========= JOIN BUTTON ========= */
+
+if(i.customId==="join"){
+
+if(players.includes(i.user.id))
+return i.reply({content:"Already joined",ephemeral:true})
+
+if(players.length>=maxPlayers)
+return i.reply({content:"Tournament full",ephemeral:true})
+
+players.push(i.user.id)
+
+save({players,matches,winners,round,maxPlayers,rewards})
+
+i.reply({content:`${CHECK} Registered`,ephemeral:true})
+
+}
+
+})
+
+/* ========= COMMAND HANDLER ========= */
+
+client.on("messageCreate",async msg=>{
+
+if(msg.author.bot) return
+if(!msg.content.startsWith(PREFIX)) return
+
+const args=msg.content.slice(PREFIX.length).split(" ")
+const cmd=args.shift().toLowerCase()
+
+runCommand(cmd,args,msg)
+
+})
+
+client.on("interactionCreate",async i=>{
+
+if(!i.isChatInputCommand()) return
+
+runCommand(i.commandName,i.options,i)
+
+})
+
+/* ========= COMMANDS ========= */
+
+async function runCommand(cmd,args,ctx){
+
+/* CREATE TOURNAMENT */
+
+if(cmd==="tour"){
+
+let p=args.players||args[0]
+let server=args.server||args[1]
+let map=args.map||args[2]
+let r1=args.reward1||args[3]
+let r2=args.reward2||args[4]
+let r3=args.reward3||args[5]
+
+maxPlayers=p
+rewards=[r1,r2,r3]
+
+players=[]
 
 const embed=new EmbedBuilder()
 
-.setTitle("🏆 Tournament Winners")
+.setTitle("Tournament Registration")
+
+.setDescription(`
+Server: **${server}**
+Map: **${map}**
+
+Players **${players.length}/${maxPlayers}**
+
+Rewards
+🥇 ${r1}
+🥈 ${r2}
+🥉 ${r3}
+`)
+
+const row=new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("join")
+.setLabel("Join")
+.setStyle(ButtonStyle.Success)
+
+)
+
+if(ctx.reply)
+ctx.reply({embeds:[embed],components:[row]})
+else
+ctx.channel.send({embeds:[embed],components:[row]})
+
+}
+
+/* START */
+
+if(cmd==="start"){
+
+matches=[]
+winners=[]
+
+let shuffled=[...players].sort(()=>Math.random()-0.5)
+
+for(let i=0;i<shuffled.length;i+=2){
+
+matches.push({
+p1:shuffled[i],
+p2:shuffled[i+1]||"BYE"
+})
+
+}
+
+sendBracket(ctx.channel||ctx)
+
+}
+
+/* QUAL */
+
+if(cmd==="qual"){
+
+let user=args.player||ctx.options.getUser("player")
+
+winners.push(user.id)
+
+}
+
+/* NEXT */
+
+if(cmd==="next"){
+
+nextRound(ctx.channel||ctx)
+
+}
+
+/* ROOM CODE */
+
+if(cmd==="code"){
+
+let room=args.room||args[0]
+let p1=args.p1||ctx.options.getUser("p1")
+let p2=args.p2||ctx.options.getUser("p2")
+
+const embed=new EmbedBuilder()
+
+.setTitle("Match Code")
+
+.setDescription(`
+${p1.username} ${VS} ${p2.username}
+
+Room Code
+\`\`\`
+${room}
+\`\`\`
+`)
+
+ctx.reply?ctx.reply({embeds:[embed]}):ctx.channel.send({embeds:[embed]})
+
+}
+
+/* TICKET PANEL */
+
+if(cmd==="ticketpanel"){
+
+const row=new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("ticket")
+.setLabel("Open Ticket")
+.setStyle(ButtonStyle.Primary)
+
+)
+
+ctx.reply
+?ctx.reply({content:"Support Panel",components:[row]})
+:ctx.channel.send({content:"Support Panel",components:[row]})
+
+}
+
+}
+
+/* ========= BRACKET ========= */
+
+async function sendBracket(channel){
+
+let desc=""
+
+for(let i=0;i<matches.length;i++){
+
+let p1=matches[i].p1
+let p2=matches[i].p2
+
+desc+=`Match ${i+1}
+${p1} ${VS} ${p2}
+
+`
+}
+
+const embed=new EmbedBuilder()
+
+.setTitle(`Round ${round}`)
+.setDescription(desc)
+
+channel.send({embeds:[embed]})
+
+}
+
+/* ========= NEXT ROUND ========= */
+
+async function nextRound(channel){
+
+if(winners.length===1){
+
+let first=await client.users.fetch(winners[0])
+let second=await client.users.fetch(winners[1]||winners[0])
+let third=await client.users.fetch(winners[2]||winners[0])
+
+const embed=new EmbedBuilder()
+
+.setTitle("🏆 Tournament Results")
 
 .setThumbnail(first.displayAvatarURL())
 
 .setDescription(`
-🥇 **${first.username}** <reward1>
+🥇 **${first.username}**
+${rewards[0]}
 
-🥈 ${second.username} <reward2>
+🥈 ${second.username}
+${rewards[1]}
 
-🥉 ${third.username} <reward3>
-`);
+🥉 ${third.username}
+${rewards[2]}
+`)
 
-interaction.channel.send({embeds:[embed]});
+channel.send({embeds:[embed]})
 
-interaction.reply({content:"Winner announced",ephemeral:true});
+players=[]
+matches=[]
+winners=[]
+round=1
+
+save({players,matches,winners,round,maxPlayers,rewards})
 
 }
 
-});
+}
 
-client.login(process.env.TOKEN);
+/* ========= LOGIN ========= */
+
+client.login(process.env.TOKEN)
