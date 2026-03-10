@@ -51,6 +51,12 @@ const CHECK="<:check:1480513506871742575>"
 const CROSS="<:sg_cross:1480513567655592037>"
 const VS="<:VS:1477014161484677150>"
 
+/* ========= IMAGES ========= */
+
+const REGISTER_IMAGE="https://cdn.discordapp.com/attachments/1471952333209604239/1480640926543118426/image0.jpg"
+const BRACKET_IMAGE="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
+const FOOTER_IMAGE="https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg"
+
 /* ========= FILE ========= */
 
 const file="./tournament.json"
@@ -82,6 +88,14 @@ let winners=db.winners
 let round=db.round
 let maxPlayers=db.maxPlayers
 let rewards=db.rewards
+
+function footer(embed,guild){
+const time=new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"})
+embed.setFooter({
+text:`Enjoy The Fun | ${guild.name} | ${time}`,
+iconURL:FOOTER_IMAGE
+})
+}
 
 /* ========= READY ========= */
 
@@ -141,6 +155,8 @@ ${Math.floor((Date.now()-member.user.createdTimestamp)/86400000)} days
 ${member.displayName}
 `)
 
+footer(embed,member.guild)
+
 ch.send({
 content:`Welcome <@${member.id}>`,
 embeds:[embed]
@@ -152,11 +168,7 @@ embeds:[embed]
 
 client.on("interactionCreate",async i=>{
 
-/* BUTTONS */
-
 if(i.isButton()){
-
-/* CREATE TICKET */
 
 if(i.customId==="ticket"){
 
@@ -211,8 +223,6 @@ return i.reply({content:`Ticket created: ${ch}`,ephemeral:true})
 
 }
 
-/* CLOSE TICKET */
-
 if(i.customId==="close_ticket"){
 
 if(!i.member.roles.cache.has(MOD_ROLE))
@@ -221,8 +231,6 @@ return i.reply({content:"Moderator only",ephemeral:true})
 i.channel.delete()
 
 }
-
-/* JOIN TOURNAMENT */
 
 if(i.customId==="join"){
 
@@ -242,12 +250,8 @@ return i.reply({content:`${CHECK} Registered`,ephemeral:true})
 
 }
 
-/* SLASH COMMANDS */
-
 if(i.isChatInputCommand()){
-
 runCommand(i.commandName,i.options,i)
-
 }
 
 })
@@ -294,6 +298,7 @@ save({players,matches,winners,round,maxPlayers,rewards})
 const embed=new EmbedBuilder()
 
 .setTitle("Tournament Registration")
+.setImage(REGISTER_IMAGE)
 
 .setDescription(`
 Server: **${server}**
@@ -307,6 +312,8 @@ Rewards
 🥉 ${r3}
 `)
 
+footer(embed,ctx.guild)
+
 const row=new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
@@ -316,10 +323,9 @@ new ButtonBuilder()
 
 )
 
-if(ctx.reply)
-ctx.reply({embeds:[embed],components:[row]})
-else
-ctx.channel.send({embeds:[embed],components:[row]})
+ctx.reply
+?ctx.reply({embeds:[embed],components:[row]})
+:ctx.channel.send({embeds:[embed],components:[row]})
 
 }
 
@@ -363,12 +369,10 @@ save({players,matches,winners,round,maxPlayers,rewards})
 
 }
 
-/* NEXT ROUND */
+/* NEXT */
 
 if(cmd==="next"){
-
 nextRound(ctx.channel||ctx)
-
 }
 
 /* ROOM CODE */
@@ -391,6 +395,8 @@ Room Code
 ${room}
 \`\`\`
 `)
+
+footer(embed,ctx.guild)
 
 ctx.reply
 ?ctx.reply({embeds:[embed]})
@@ -439,7 +445,10 @@ desc+=`Match ${i+1}
 const embed=new EmbedBuilder()
 
 .setTitle(`Round ${round}`)
+.setImage(BRACKET_IMAGE)
 .setDescription(desc)
+
+footer(embed,channel.guild)
 
 channel.send({embeds:[embed]})
 
@@ -448,8 +457,6 @@ channel.send({embeds:[embed]})
 /* ========= NEXT ROUND ========= */
 
 async function nextRound(channel){
-
-if(winners.length<=1) return
 
 if(winners.length===1){
 
@@ -460,6 +467,7 @@ let third=await client.users.fetch(winners[2]||winners[0])
 const embed=new EmbedBuilder()
 
 .setTitle("🏆 Tournament Results")
+.setImage(BRACKET_IMAGE)
 
 .setThumbnail(first.displayAvatarURL())
 
@@ -473,6 +481,8 @@ ${rewards[1]}
 🥉 ${third.username}
 ${rewards[2]}
 `)
+
+footer(embed,channel.guild)
 
 channel.send({embeds:[embed]})
 
