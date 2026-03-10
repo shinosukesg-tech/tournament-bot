@@ -57,6 +57,12 @@ const FOOTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/148
 
 const tournamentFile="./tournament.json"
 
+/* AUTO CREATE FILE */
+
+if(!fs.existsSync(tournamentFile)){
+fs.writeFileSync(tournamentFile,JSON.stringify({},null,2))
+}
+
 function load(file){
 if(!fs.existsSync(file)) return {}
 return JSON.parse(fs.readFileSync(file))
@@ -132,12 +138,20 @@ new SlashCommandBuilder()
 
 const rest=new REST({version:"10"}).setToken(process.env.TOKEN)
 
+try{
+
 await rest.put(
 Routes.applicationCommands(client.user.id),
 {body:commands}
 )
 
 console.log("Slash commands loaded")
+
+}catch(err){
+
+console.log("Slash command error:",err)
+
+}
 
 })
 
@@ -160,6 +174,7 @@ if(cmd==="start"){
 if(players.length<2) return message.channel.send("Not enough players")
 
 matches=[]
+winners=[]
 
 let shuffled=[...players].sort(()=>Math.random()-0.5)
 
@@ -240,14 +255,13 @@ client.on("interactionCreate",async interaction=>{
 
 if(!interaction.isChatInputCommand()) return
 
-/* START */
-
 if(interaction.commandName==="start"){
 
 if(players.length<2)
 return interaction.reply("Not enough players")
 
 matches=[]
+winners=[]
 
 let shuffled=[...players].sort(()=>Math.random()-0.5)
 
@@ -268,8 +282,6 @@ interaction.reply("Tournament started")
 
 }
 
-/* QUAL */
-
 if(interaction.commandName==="qual"){
 
 let user=interaction.options.getUser("player")
@@ -288,8 +300,6 @@ nextRound(interaction.channel)
 
 }
 
-/* NEXT */
-
 if(interaction.commandName==="next"){
 
 nextRound(interaction.channel)
@@ -297,8 +307,6 @@ nextRound(interaction.channel)
 interaction.reply("Next round")
 
 }
-
-/* CODE */
 
 if(interaction.commandName==="code"){
 
@@ -338,11 +346,8 @@ let first=await client.users.fetch(winners[0])
 const embed=new EmbedBuilder()
 
 .setTitle("🏆 Tournament Winner")
-
 .setThumbnail(first.displayAvatarURL())
-
 .setDescription(`🥇 **${first.username}**`)
-
 .setFooter(footer())
 
 channel.send({embeds:[embed]})
@@ -407,4 +412,6 @@ channel.send({embeds:[embed]})
 
 }
 
-client.login(process.env.TOKEN)
+client.login(process.env.TOKEN).catch(err=>{
+console.log("Login Error:",err)
+})
