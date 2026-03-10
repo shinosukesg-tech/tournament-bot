@@ -1,0 +1,44 @@
+{
+  "commands": [
+    {
+      "name": "tour",
+      "description": "Create tournament panel",
+      "options": [
+        {"name":"players","description":"Max players","type":4,"required":true},
+        {"name":"server","description":"Server name","type":3,"required":true},
+        {"name":"map","description":"Map name","type":3,"required":true},
+        {"name":"reward1","description":"Reward 1st place","type":3,"required":true},
+        {"name":"reward2","description":"Reward 2nd place","type":3,"required":true},
+        {"name":"reward3","description":"Reward 3rd place","type":3,"required":true}
+      ]
+    },
+    {
+      "name": "start",
+      "description": "Start tournament"
+    },
+    {
+      "name": "next",
+      "description": "Next round"
+    },
+    {
+      "name": "qual",
+      "description": "Qualify player",
+      "options":[
+        {"name":"player","description":"Winner","type":6,"required":true}
+      ]
+    },
+    {
+      "name": "code",
+      "description": "Send match room code",
+      "options":[
+        {"name":"room","description":"Room code","type":3,"required":true},
+        {"name":"p1","description":"Player 1","type":6,"required":true},
+        {"name":"p2","description":"Player 2","type":6,"required":true}
+      ]
+    },
+    {
+      "name":"ticketpanel",
+      "description":"Send ticket panel"
+    }
+  ]
+}
