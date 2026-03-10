@@ -17,8 +17,6 @@ EmbedBuilder,
 ActionRowBuilder,
 ButtonBuilder,
 ButtonStyle,
-PermissionsBitField,
-ChannelType,
 REST,
 Routes
 }=require("discord.js")
@@ -26,8 +24,6 @@ Routes
 const fs=require("fs")
 
 /* ========= FILES ========= */
-
-const commands=require("./commands.json")
 
 function loadJSON(file,def){
 try{return JSON.parse(fs.readFileSync(file))}
@@ -46,10 +42,9 @@ round:1,
 max:0,
 server:"",
 map:"",
-rewards:[]
+rewards:[],
+messageId:null
 })
-
-let welcome=loadJSON("./welcome.json",{})
 
 /* ========= CLIENT ========= */
 
@@ -64,29 +59,22 @@ GatewayIntentBits.GuildMembers
 
 const PREFIX="!"
 
-/* ========= IDS ========= */
-
-const WELCOME_CHANNEL="1465234114318696498"
-const MOD_ROLE="1429913618211672125"
-
 /* ========= EMOJIS ========= */
 
-const CHECK="<:check:1480513506871742575>"
-const CROSS="<:sg_cross:1480513567655592037>"
 const VS="<:VS:1477014161484677150>"
+const CHECK="<:check:1480513506871742575>"
 
 /* ========= IMAGES ========= */
 
-const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png?ex=69ad0a47&is=69abb8c7&hm=219288b707fdc90691a78a932f01de2892abaa70e4db792ebd5cfb04a1827374&20cd476614fad2ab236a26eba315f3b1696db63&"
+const REGISTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480640926543118426/image0.jpg"
 const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
 const FOOTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg"
 
 /* ========= FOOTER ========= */
 
 function footer(embed,guild){
-const time=new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"})
 embed.setFooter({
-text:`Enjoy The Fun | ${guild.name} | ${time}`,
+text:`Enjoy The Fun | ${guild.name}`,
 iconURL:FOOTER_IMG
 })
 }
@@ -95,7 +83,7 @@ iconURL:FOOTER_IMG
 
 client.once("ready",async()=>{
 
-console.log(`Logged in as ${client.user.tag}`)
+console.log(`Logged as ${client.user.tag}`)
 
 try{
 
@@ -103,59 +91,31 @@ const rest=new REST({version:"10"}).setToken(process.env.TOKEN)
 
 await rest.put(
 Routes.applicationCommands(client.user.id),
-{body:commands.commands}
+{body:[]}
 )
 
-console.log("Slash commands loaded")
+console.log("Slash commands synced")
 
-}catch(e){
-console.log(e)
-}
-
-})
-
-/* ========= WELCOME ========= */
-
-client.on("guildMemberAdd",member=>{
-
-let ch=member.guild.channels.cache.get(WELCOME_CHANNEL)
-if(!ch) return
-
-const embed=new EmbedBuilder()
-
-.setTitle(`Welcome ${member.user.username}`)
-.setThumbnail(member.user.displayAvatarURL())
-
-.setDescription(`
-Welcome to **${member.guild.name}**
-
-User ID: ${member.id}
-Account Created: ${member.user.createdAt.toDateString()}
-`)
-
-footer(embed,member.guild)
-
-ch.send({embeds:[embed]})
+}catch(e){console.log(e)}
 
 })
 
 /* ========= REGISTER PANEL ========= */
 
-function sendRegister(channel){
+async function sendRegister(channel){
 
-let embed=new EmbedBuilder()
+const embed=new EmbedBuilder()
 
-.setTitle("Tournament Registration")
-
+.setTitle("🏆 Tournament Registration")
 .setImage(REGISTER_IMG)
 
 .setDescription(`
 Server: **${tournament.server}**
 Map: **${tournament.map}**
 
-Players **${tournament.players.length}/${tournament.max}**
+👥 Players **${tournament.players.length}/${tournament.max}**
 
-Rewards
+🏅 Rewards
 🥇 ${tournament.rewards[0]}
 🥈 ${tournament.rewards[1]}
 🥉 ${tournament.rewards[2]}
@@ -168,8 +128,7 @@ const row=new ActionRowBuilder().addComponents(
 new ButtonBuilder()
 .setCustomId("register")
 .setLabel("Register")
-.setStyle(ButtonStyle.Success)
-.setDisabled(tournament.players.length>=tournament.max),
+.setStyle(ButtonStyle.Success),
 
 new ButtonBuilder()
 .setCustomId("unregister")
@@ -183,7 +142,42 @@ new ButtonBuilder()
 
 )
 
-channel.send({embeds:[embed],components:[row]})
+let msg=await channel.send({embeds:[embed],components:[row]})
+
+tournament.messageId=msg.id
+saveJSON("./tournament.json",tournament)
+
+}
+
+/* ========= UPDATE PANEL ========= */
+
+async function updatePanel(channel){
+
+if(!tournament.messageId) return
+
+let msg=await channel.messages.fetch(tournament.messageId).catch(()=>null)
+if(!msg) return
+
+const embed=new EmbedBuilder()
+
+.setTitle("🏆 Tournament Registration")
+.setImage(REGISTER_IMG)
+
+.setDescription(`
+Server: **${tournament.server}**
+Map: **${tournament.map}**
+
+👥 Players **${tournament.players.length}/${tournament.max}**
+
+🏅 Rewards
+🥇 ${tournament.rewards[0]}
+🥈 ${tournament.rewards[1]}
+🥉 ${tournament.rewards[2]}
+`)
+
+footer(embed,channel.guild)
+
+msg.edit({embeds:[embed]})
 
 }
 
@@ -200,14 +194,19 @@ if(i.customId==="register"){
 if(tournament.players.includes(i.user.id))
 return i.reply({content:"Already registered",ephemeral:true})
 
-if(tournament.players.length>=tournament.max)
-return i.reply({content:"Tournament full",ephemeral:true})
-
 tournament.players.push(i.user.id)
 
 saveJSON("./tournament.json",tournament)
 
-return i.reply({content:`${CHECK} Registered`,ephemeral:true})
+await updatePanel(i.channel)
+
+i.reply({content:`${CHECK} Registered`,ephemeral:true})
+
+if(tournament.players.length==tournament.max){
+
+createBracket(i.channel)
+
+}
 
 }
 
@@ -219,7 +218,9 @@ tournament.players=tournament.players.filter(x=>x!==i.user.id)
 
 saveJSON("./tournament.json",tournament)
 
-return i.reply({content:`${CROSS} Unregistered`,ephemeral:true})
+updatePanel(i.channel)
+
+i.reply({content:"Unregistered",ephemeral:true})
 
 }
 
@@ -227,12 +228,15 @@ return i.reply({content:`${CROSS} Unregistered`,ephemeral:true})
 
 if(i.customId==="participants"){
 
-let list=tournament.players.map(x=>`<@${x}>`).join("\n")
+let names=await Promise.all(
+tournament.players.map(async id=>{
+let u=await client.users.fetch(id)
+return u.username
+})
+)
 
-if(!list) list="No players"
-
-return i.reply({
-content:`Participants\n${list}`,
+i.reply({
+content:`👥 Participants\n\n${names.join("\n")||"None"}`,
 ephemeral:true
 })
 
@@ -254,15 +258,15 @@ const cmd=args.shift().toLowerCase()
 
 if(cmd==="tour"){
 
-tournament.max=args[0]
+tournament.max=parseInt(args[0])
 tournament.server=args[1]
 tournament.map=args[2]
 tournament.rewards=[args[3],args[4],args[5]]
 
 tournament.players=[]
-tournament.round=1
 tournament.matches=[]
 tournament.qualified=[]
+tournament.round=1
 
 saveJSON("./tournament.json",tournament)
 
@@ -276,14 +280,19 @@ if(cmd==="helpm"){
 
 const embed=new EmbedBuilder()
 
-.setTitle("Tournament Bot Help")
+.setTitle("🏆 Tournament Bot Commands")
 
 .setDescription(`
-!tour <players> <server> <map> <r1> <r2> <r3>
-!start
-!qual @player
-!code <roomcode> @p1 @p2
-!next
+🎮 **Tournament**
+\`!tour players server map r1 r2 r3\`
+
+🏁 **Qualify**
+\`!qual @player\`
+
+🏠 **Room Code**
+\`!code CODE @p1 @p2\`
+
+📊 **Bracket auto generated when full**
 `)
 
 .setImage(BRACKET_IMG)
@@ -294,9 +303,58 @@ msg.channel.send({embeds:[embed]})
 
 }
 
-/* START */
+/* QUAL */
 
-if(cmd==="start"){
+if(cmd==="qual"){
+
+let user=msg.mentions.users.first()
+if(!user) return
+
+tournament.qualified.push(user.id)
+
+saveJSON("./tournament.json",tournament)
+
+msg.channel.send(`${CHECK} **${user.username}** qualified`)
+
+checkRound(msg.channel)
+
+}
+
+/* CODE */
+
+if(cmd==="code"){
+
+let code=args[0]
+let p1=msg.mentions.users.first()
+let p2=msg.mentions.users.last()
+
+const embed=new EmbedBuilder()
+
+.setTitle("🎮 Match Room")
+
+.setDescription(`
+${p1.username} ${VS} ${p2.username}
+
+Room Code
+\`\`\`
+${code}
+\`\`\`
+`)
+
+footer(embed,msg.guild)
+
+msg.channel.send({embeds:[embed]})
+
+p1.send({embeds:[embed]}).catch(()=>{})
+p2.send({embeds:[embed]}).catch(()=>{})
+
+}
+
+})
+
+/* ========= BRACKET ========= */
+
+function createBracket(channel){
 
 let arr=[...tournament.players].sort(()=>Math.random()-0.5)
 
@@ -313,55 +371,9 @@ p2:arr[i+1]
 
 saveJSON("./tournament.json",tournament)
 
-sendBracket(msg.channel)
+sendBracket(channel)
 
 }
-
-/* QUAL */
-
-if(cmd==="qual"){
-
-let user=msg.mentions.users.first()
-if(!user) return
-
-tournament.qualified.push(user.id)
-
-saveJSON("./tournament.json",tournament)
-
-msg.reply(`${user.username} qualified`)
-
-}
-
-/* CODE */
-
-if(cmd==="code"){
-
-let code=args[0]
-let p1=msg.mentions.users.first()
-let p2=msg.mentions.users.last()
-
-const embed=new EmbedBuilder()
-
-.setTitle("Match Code")
-
-.setDescription(`
-${p1} ${VS} ${p2}
-
-Room Code
-\`\`\`
-${code}
-\`\`\`
-`)
-
-footer(embed,msg.guild)
-
-msg.channel.send({embeds:[embed]})
-
-}
-
-})
-
-/* ========= BRACKET ========= */
 
 function sendBracket(channel){
 
@@ -388,7 +400,59 @@ channel.send({embeds:[embed]})
 
 }
 
+/* ========= ROUND CHECK ========= */
+
+function checkRound(channel){
+
+if(tournament.qualified.length===tournament.matches.length){
+
+if(tournament.qualified.length===1){
+
+announceWinner(channel)
+
+return
+}
+
+tournament.players=[...tournament.qualified]
+tournament.qualified=[]
+tournament.round++
+
+createBracket(channel)
+
+}
+
+}
+
+/* ========= WINNER ========= */
+
+async function announceWinner(channel){
+
+let first=await client.users.fetch(tournament.players[0])
+let second=await client.users.fetch(tournament.players[1]||tournament.players[0])
+let third=await client.users.fetch(tournament.players[2]||tournament.players[0])
+
+const embed=new EmbedBuilder()
+
+.setTitle(`🏆 ${first.username} WINS`)
+.setThumbnail(first.displayAvatarURL())
+
+.setDescription(`
+🥇 **${first.username}**
+${tournament.rewards[0]}
+
+🥈 ${second.username}
+${tournament.rewards[1]}
+
+🥉 ${third.username}
+${tournament.rewards[2]}
+`)
+
+footer(embed,channel.guild)
+
+channel.send({embeds:[embed]})
+
+}
+
 /* ========= LOGIN ========= */
 
 client.login(process.env.TOKEN)
-
