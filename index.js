@@ -31,7 +31,7 @@ const WELCOME_CHANNEL_ID = "1465234114318696498";
 const REG_IMG = "https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png";
 const BRACKET_IMG = "https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png";
 const TICKET_IMG = "https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png";
-const FOOTER_IMG = "https://cdn.discordapp.com";
+const FOOTER_IMG = "https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg?ex=69b16883&is=69b01703&hm=500f61156c4739868aabc0d5672dd03c26d582ccc50182ff187b06bc55e21c2e&a8c36da55c71c52abb2f6f0b99e8667655ca57f50a9e6190c5&";
 
 /* ================= DATA MANAGEMENT ================= */
 const files = {
@@ -189,3 +189,4 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.login(process.env.TOKEN);
+
