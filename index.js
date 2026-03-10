@@ -51,12 +51,28 @@ const CHECK="<:check:1480513506871742575>"
 const CROSS="<:sg_cross:1480513567655592037>"
 const VS="<:VS:1477014161484677150>"
 
-/* ========= FILES ========= */
+/* ========= FILE ========= */
 
 const file="./tournament.json"
 
-function load(){return JSON.parse(fs.readFileSync(file))}
-function save(d){fs.writeFileSync(file,JSON.stringify(d,null,2))}
+function load(){
+try{
+return JSON.parse(fs.readFileSync(file))
+}catch{
+return {
+players:[],
+matches:[],
+winners:[],
+round:1,
+maxPlayers:0,
+rewards:[]
+}
+}
+}
+
+function save(d){
+fs.writeFileSync(file,JSON.stringify(d,null,2))
+}
 
 let db=load()
 
@@ -69,9 +85,11 @@ let rewards=db.rewards
 
 /* ========= READY ========= */
 
-client.on("ready",async()=>{
+client.once("ready",async()=>{
 
-console.log("Bot Ready")
+console.log(`Logged in as ${client.user.tag}`)
+
+try{
 
 const rest=new REST({version:"10"}).setToken(process.env.TOKEN)
 
@@ -79,6 +97,14 @@ await rest.put(
 Routes.applicationCommands(client.user.id),
 {body:commands.commands}
 )
+
+console.log("Slash commands loaded")
+
+}catch(err){
+
+console.error("Slash command error:",err)
+
+}
 
 })
 
@@ -122,11 +148,15 @@ embeds:[embed]
 
 })
 
-/* ========= TICKET PANEL ========= */
+/* ========= INTERACTIONS ========= */
 
 client.on("interactionCreate",async i=>{
 
+/* BUTTONS */
+
 if(i.isButton()){
+
+/* CREATE TICKET */
 
 if(i.customId==="ticket"){
 
@@ -177,9 +207,11 @@ content:`Ticket for <@${i.user.id}>`,
 components:[row]
 })
 
-i.reply({content:`Ticket created: ${ch}`,ephemeral:true})
+return i.reply({content:`Ticket created: ${ch}`,ephemeral:true})
 
 }
+
+/* CLOSE TICKET */
 
 if(i.customId==="close_ticket"){
 
@@ -190,9 +222,7 @@ i.channel.delete()
 
 }
 
-}
-
-/* ========= JOIN BUTTON ========= */
+/* JOIN TOURNAMENT */
 
 if(i.customId==="join"){
 
@@ -206,35 +236,37 @@ players.push(i.user.id)
 
 save({players,matches,winners,round,maxPlayers,rewards})
 
-i.reply({content:`${CHECK} Registered`,ephemeral:true})
+return i.reply({content:`${CHECK} Registered`,ephemeral:true})
+
+}
+
+}
+
+/* SLASH COMMANDS */
+
+if(i.isChatInputCommand()){
+
+runCommand(i.commandName,i.options,i)
 
 }
 
 })
 
-/* ========= COMMAND HANDLER ========= */
+/* ========= PREFIX COMMANDS ========= */
 
-client.on("messageCreate",async msg=>{
+client.on("messageCreate",msg=>{
 
 if(msg.author.bot) return
 if(!msg.content.startsWith(PREFIX)) return
 
-const args=msg.content.slice(PREFIX.length).split(" ")
+const args=msg.content.slice(PREFIX.length).trim().split(/ +/)
 const cmd=args.shift().toLowerCase()
 
 runCommand(cmd,args,msg)
 
 })
 
-client.on("interactionCreate",async i=>{
-
-if(!i.isChatInputCommand()) return
-
-runCommand(i.commandName,i.options,i)
-
-})
-
-/* ========= COMMANDS ========= */
+/* ========= COMMAND SYSTEM ========= */
 
 async function runCommand(cmd,args,ctx){
 
@@ -253,6 +285,11 @@ maxPlayers=p
 rewards=[r1,r2,r3]
 
 players=[]
+matches=[]
+winners=[]
+round=1
+
+save({players,matches,winners,round,maxPlayers,rewards})
 
 const embed=new EmbedBuilder()
 
@@ -304,21 +341,29 @@ p2:shuffled[i+1]||"BYE"
 
 }
 
+save({players,matches,winners,round,maxPlayers,rewards})
+
 sendBracket(ctx.channel||ctx)
 
 }
 
-/* QUAL */
+/* QUALIFY */
 
 if(cmd==="qual"){
 
-let user=args.player||ctx.options.getUser("player")
+let user=args.player||args[0]||ctx.options?.getUser("player")
 
-winners.push(user.id)
+if(!user) return
+
+let id=user.id||user
+
+winners.push(id)
+
+save({players,matches,winners,round,maxPlayers,rewards})
 
 }
 
-/* NEXT */
+/* NEXT ROUND */
 
 if(cmd==="next"){
 
@@ -331,15 +376,15 @@ nextRound(ctx.channel||ctx)
 if(cmd==="code"){
 
 let room=args.room||args[0]
-let p1=args.p1||ctx.options.getUser("p1")
-let p2=args.p2||ctx.options.getUser("p2")
+let p1=args.p1||args[1]
+let p2=args.p2||args[2]
 
 const embed=new EmbedBuilder()
 
 .setTitle("Match Code")
 
 .setDescription(`
-${p1.username} ${VS} ${p2.username}
+${p1} ${VS} ${p2}
 
 Room Code
 \`\`\`
@@ -347,7 +392,9 @@ ${room}
 \`\`\`
 `)
 
-ctx.reply?ctx.reply({embeds:[embed]}):ctx.channel.send({embeds:[embed]})
+ctx.reply
+?ctx.reply({embeds:[embed]})
+:ctx.channel.send({embeds:[embed]})
 
 }
 
@@ -384,7 +431,7 @@ let p1=matches[i].p1
 let p2=matches[i].p2
 
 desc+=`Match ${i+1}
-${p1} ${VS} ${p2}
+<@${p1}> ${VS} <@${p2}>
 
 `
 }
@@ -401,6 +448,8 @@ channel.send({embeds:[embed]})
 /* ========= NEXT ROUND ========= */
 
 async function nextRound(channel){
+
+if(winners.length<=1) return
 
 if(winners.length===1){
 
