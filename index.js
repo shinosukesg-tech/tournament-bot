@@ -17,8 +17,8 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.MessageContent, // REQUIRED FOR ! COMMANDS
+        GatewayIntentBits.GuildMembers    // REQUIRED FOR WELCOME
     ]
 });
 
@@ -28,10 +28,10 @@ const MOD_ROLE = "Moderator";
 const WELCOME_CHANNEL_ID = "1465234114318696498";
 
 /* ================= ASSETS ================= */
-const REG_IMG = "https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png";
-const BRACKET_IMG = "https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png";
-const TICKET_IMG = "https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png";
-const FOOTER_IMG = "https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg?ex=69b16883&is=69b01703&hm=500f61156c4739868aabc0d5672dd03c26d582ccc50182ff187b06bc55e21c2e&a8c36da55c71c52abb2f6f0b99e8667655ca57f50a9e6190c5&";
+const REG_IMG = "https://cdn.discordapp.com";
+const BRACKET_IMG = "https://cdn.discordapp.com";
+const TICKET_IMG = "https://cdn.discordapp.com";
+const FOOTER_IMG = "https://cdn.discordapp.com";
 
 /* ================= DATA MANAGEMENT ================= */
 const files = {
@@ -42,7 +42,7 @@ const files = {
 
 Object.values(files).forEach(f => { if (!fs.existsSync(f)) fs.writeFileSync(f, JSON.stringify({})); });
 
-function load(file) { return JSON.parse(fs.readFileSync(file)); }
+function load(file) { try { return JSON.parse(fs.readFileSync(file)); } catch { return { current: { players: [], rewards: ["-", "-", "-"] } }; } }
 function save(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
 function footer() {
@@ -79,7 +79,7 @@ client.on("ready", async () => {
     console.log(`Bot Ready: ${client.user.tag}`);
 });
 
-/* ================= AUTO WELCOME ================= */
+/* ================= AUTO WELCOME (IMAGE STYLE) ================= */
 client.on("guildMemberAdd", async member => {
     const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
     if (!channel) return;
@@ -106,7 +106,27 @@ client.on("guildMemberAdd", async member => {
     save(files.welcome, wData);
 });
 
-/* ================= INTERACTION HANDLER ================= */
+/* ================= MESSAGE (!) HANDLER ================= */
+client.on("messageCreate", async message => {
+    if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const cmd = args.shift().toLowerCase();
+
+    // !help
+    if (cmd === "help") {
+        const embed = new EmbedBuilder().setTitle("Tournament Bot Help").setDescription("Use `!` or `/` for commands.\n\n**Commands:**\n`1v1`, `start`, `winner`, `ticket-panel`").setFooter(footer());
+        return message.channel.send({ embeds: [embed] });
+    }
+
+    // !1v1 (Manual version without options, for staff)
+    if (cmd === "1v1" && isStaff(message.member)) {
+        const embed = new EmbedBuilder().setTitle("Tournament Panel").setDescription("Click below to join!").setImage(REG_IMG).setColor("#6E4AFF");
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("join_t").setLabel("Register Now").setStyle(ButtonStyle.Success).setEmoji("🏆"));
+        return message.channel.send({ embeds: [embed], components: [row] });
+    }
+});
+
+/* ================= SLASH (/) & BUTTON HANDLER ================= */
 client.on("interactionCreate", async interaction => {
     if (interaction.isChatInputCommand()) {
         if (!isStaff(interaction.member) && interaction.commandName !== "help") return interaction.reply({ content: "Staff only!", ephemeral: true });
@@ -136,7 +156,6 @@ client.on("interactionCreate", async interaction => {
             let tData = load(files.tourney);
             tData.current = tourneyData;
             save(files.tourney, tData);
-
             return interaction.reply({ embeds: [embed], components: [row] });
         }
 
@@ -154,9 +173,7 @@ client.on("interactionCreate", async interaction => {
                 .addFields(
                     { name: "🥈 2nd Place", value: `${p2.username}\nReward: ${tData.rewards[1]}`, inline: true },
                     { name: "🥉 3rd Place", value: `${p3.username}\nReward: ${tData.rewards[2]}`, inline: true }
-                )
-                .setFooter(footer());
-
+                ).setFooter(footer());
             return interaction.reply({ embeds: [embed] });
         }
 
@@ -171,7 +188,7 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isButton()) {
         if (interaction.customId === "join_t") {
             let tData = load(files.tourney);
-            if (!tData.current) return interaction.reply({ content: "No active tournament!", ephemeral: true });
+            if (!tData.current || !tData.current.players) return interaction.reply({ content: "No active registration!", ephemeral: true });
             if (tData.current.players.includes(interaction.user.id)) return interaction.reply({ content: "Already registered!", ephemeral: true });
             tData.current.players.push(interaction.user.id);
             save(files.tourney, tData);
@@ -189,4 +206,3 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.login(process.env.TOKEN);
-
