@@ -17,8 +17,7 @@ EmbedBuilder,
 ActionRowBuilder,
 ButtonBuilder,
 ButtonStyle,
-REST,
-Routes
+ChannelType
 }=require("discord.js")
 
 const fs=require("fs")
@@ -47,6 +46,15 @@ messageId:null,
 bracketMessageId:null
 })
 
+let welcome=loadJSON("./welcome.json",{channel:null})
+
+let commands=loadJSON("./commands.json",{prefix:"!"})
+
+let ticket=loadJSON("./ticket.json",{
+category:"1480854630035357776",
+moderatorRole:"Moderator"
+})
+
 /* ========= CLIENT ========= */
 
 const client=new Client({
@@ -58,7 +66,7 @@ GatewayIntentBits.GuildMembers
 ]
 })
 
-const PREFIX="!"
+const PREFIX=commands.prefix||"!"
 
 /* ========= EMOJIS ========= */
 
@@ -67,15 +75,21 @@ const CHECK="<:check:1480513506871742575>"
 
 /* ========= IMAGES ========= */
 
-const REGISTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480640926543118426/image0.jpg"
+const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
 const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
 const FOOTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg"
+
+/* ========= TIME ========= */
+
+function ist(){
+return new Date().toLocaleString("en-IN",{timeZone:"Asia/Kolkata"})
+}
 
 /* ========= FOOTER ========= */
 
 function footer(embed,guild){
 embed.setFooter({
-text:`Enjoy The Fun | ${guild.name}`,
+text:`Enjoy The Fun | ShinosukeSG\n${ist()}`,
 iconURL:FOOTER_IMG
 })
 }
@@ -85,7 +99,7 @@ iconURL:FOOTER_IMG
 function progressBar(){
 
 let done=tournament.qualified.length
-let total=tournament.matches.length
+let total=tournament.matches.length||1
 
 let size=10
 let filled=Math.round((done/total)*size)
@@ -96,23 +110,8 @@ return "█".repeat(filled)+"░".repeat(size-filled)+` ${done}/${total}`
 
 /* ========= READY ========= */
 
-client.once("ready",async()=>{
-
+client.once("ready",()=>{
 console.log(`Logged as ${client.user.tag}`)
-
-try{
-
-const rest=new REST({version:"10"}).setToken(process.env.TOKEN)
-
-await rest.put(
-Routes.applicationCommands(client.user.id),
-{body:[]}
-)
-
-console.log("Slash commands synced")
-
-}catch(e){console.log(e)}
-
 })
 
 /* ========= REGISTER PANEL ========= */
@@ -198,6 +197,39 @@ msg.edit({embeds:[embed]})
 
 }
 
+/* ========= WELCOME ========= */
+
+client.on("guildMemberAdd",async member=>{
+
+if(!welcome.channel) return
+
+let ch=member.guild.channels.cache.get(welcome.channel)
+if(!ch) return
+
+const embed=new EmbedBuilder()
+
+.setTitle(`Welcome ${member.user.username}! 👋`)
+.setThumbnail(member.user.displayAvatarURL())
+
+.setDescription(`
+Welcome **${member.user.username}**
+to 🏆 **${member.guild.name}**
+
+Have an awesome time with us!
+`)
+
+.addFields(
+{name:"🆔 User ID",value:member.user.id},
+{name:"📅 Account Created",value:`${member.user.createdAt.toDateString()}`},
+{name:"🎭 Display Name",value:member.displayName}
+)
+
+footer(embed,member.guild)
+
+ch.send({embeds:[embed]})
+
+})
+
 /* ========= BUTTONS ========= */
 
 client.on("interactionCreate",async i=>{
@@ -259,19 +291,33 @@ ephemeral:true
 
 }
 
-/* NEXT ROUND */
+/* TICKETS */
 
-if(i.customId==="next_round"){
+if(["support","apply","reward"].includes(i.customId)){
 
-if(!i.member.permissions.has("Administrator"))
-return i.reply({content:"Admin only",ephemeral:true})
+let name=i.customId+"-"+i.user.username
 
-if(tournament.qualified.length<tournament.matches.length)
-return i.reply({content:"Wait all matches to finish",ephemeral:true})
+let channel=await i.guild.channels.create({
+name:name,
+type:ChannelType.GuildText,
+parent:ticket.category,
+permissionOverwrites:[
+{
+id:i.guild.id,
+deny:["ViewChannel"]
+},
+{
+id:i.user.id,
+allow:["ViewChannel","SendMessages"]
+},
+{
+id:i.guild.roles.cache.find(r=>r.name===ticket.moderatorRole)?.id,
+allow:["ViewChannel","SendMessages"]
+}
+]
+})
 
-checkRound(i.channel)
-
-i.reply({content:"Next round created",ephemeral:true})
+i.reply({content:`Ticket created: ${channel}`,ephemeral:true})
 
 }
 
@@ -286,6 +332,20 @@ if(!msg.content.startsWith(PREFIX)) return
 
 const args=msg.content.slice(PREFIX.length).split(" ")
 const cmd=args.shift().toLowerCase()
+
+/* SET WELCOME */
+
+if(cmd==="welcome"){
+
+let ch=msg.mentions.channels.first()
+if(!ch) return msg.reply("Mention channel")
+
+welcome.channel=ch.id
+saveJSON("./welcome.json",welcome)
+
+msg.reply("Welcome channel set")
+
+}
 
 /* CREATE TOUR */
 
@@ -305,9 +365,11 @@ saveJSON("./tournament.json",tournament)
 
 sendRegister(msg.channel)
 
+msg.reply("Tournament created")
+
 }
 
-/* HELP COMMAND */
+/* HELP */
 
 if(cmd==="helpm"){
 
@@ -316,25 +378,11 @@ const embed=new EmbedBuilder()
 .setTitle("🏆 Tournament Bot Help")
 
 .setDescription(`
-📌 **Tournament Commands**
-
-🎮 **Create Tournament**
-\`!tour players server map r1 r2 r3\`
-
-🏁 **Qualify Player**
-\`!qual @player\`
-
-🎮 **Send Room Code**
-\`!code CODE @player\`
-
-📊 **Bracket**
-Auto generated when players full
-
-⚡ **Next Round**
-Button below bracket (Admin only)
+!tour players server map r1 r2 r3
+!qual @player
+!code CODE @player
+!welcome #channel
 `)
-
-.setImage(BRACKET_IMG)
 
 footer(embed,msg.guild)
 
@@ -361,6 +409,8 @@ saveJSON("./tournament.json",tournament)
 
 updateBracket(msg.channel)
 
+msg.reply("Player qualified")
+
 }
 
 /* CODE */
@@ -370,11 +420,9 @@ if(cmd==="code"){
 let code=args[0]
 let p1=msg.mentions.users.first()
 
-if(!code || !p1) return msg.reply("Usage: !code CODE @player")
+if(!code||!p1) return msg.reply("Usage: !code CODE @player")
 
-let match=tournament.matches.find(
-m=>m.p1==p1.id || m.p2==p1.id
-)
+let match=tournament.matches.find(m=>m.p1==p1.id||m.p2==p1.id)
 
 if(!match) return msg.reply("Match not found")
 
@@ -399,7 +447,7 @@ footer(embed,msg.guild)
 p1.send({embeds:[embed]}).catch(()=>{})
 p2.send({embeds:[embed]}).catch(()=>{})
 
-msg.react("✅")
+msg.reply("Room code sent to players")
 
 }
 
@@ -456,14 +504,7 @@ const embed=new EmbedBuilder()
 
 footer(embed,channel.guild)
 
-const row=new ActionRowBuilder().addComponents(
-new ButtonBuilder()
-.setCustomId("next_round")
-.setLabel("Next Round")
-.setStyle(ButtonStyle.Primary)
-)
-
-let msg=await channel.send({embeds:[embed],components:[row]})
+let msg=await channel.send({embeds:[embed]})
 
 tournament.bracketMessageId=msg.id
 saveJSON("./tournament.json",tournament)
@@ -504,51 +545,6 @@ const embed=new EmbedBuilder()
 footer(embed,channel.guild)
 
 msg.edit({embeds:[embed]})
-
-}
-
-/* ========= ROUND CHECK ========= */
-
-function checkRound(channel){
-
-if(tournament.qualified.length===tournament.matches.length){
-
-if(tournament.players.length<=2){
-announceWinner(channel)
-return
-}
-
-tournament.players=[...tournament.qualified]
-tournament.qualified=[]
-tournament.round++
-
-saveJSON("./tournament.json",tournament)
-
-createBracket(channel)
-
-}
-
-}
-
-/* ========= WINNER ========= */
-
-async function announceWinner(channel){
-
-let first=await client.users.fetch(tournament.players[0])
-
-const embed=new EmbedBuilder()
-
-.setTitle(`🏆 ${first.username} WINS`)
-.setThumbnail(first.displayAvatarURL())
-
-.setDescription(`
-🥇 **${first.username}**
-${tournament.rewards[0]}
-`)
-
-footer(embed,channel.guild)
-
-channel.send({embeds:[embed]})
 
 }
 
