@@ -67,7 +67,7 @@ const CHECK="<:check:1480513506871742575>"
 
 /* ========= IMAGES ========= */
 
-const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807737877008464/Event_Background_Block_Dash_Rush_Teams.png?ex=69b25047&is=69b0fec7&hm=c4dfac8ff96d7664f83e89d3ec5d00c66cabd5bcc344c72265a5c4769d69ab5c&"
+const REGISTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480640926543118426/image0.jpg"
 const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
 const FOOTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg"
 
@@ -125,12 +125,13 @@ const embed=new EmbedBuilder()
 .setImage(REGISTER_IMG)
 
 .setDescription(`
-Server: **${tournament.server}**
-Map: **${tournament.map}**
+🎮 **Server:** ${tournament.server}
+🗺 **Map:** ${tournament.map}
 
-👥 Players **${tournament.players.length}/${tournament.max}**
+👥 **Players:** ${tournament.players.length}/${tournament.max}
 
-🏅 Rewards
+🏅 **Rewards**
+
 🥇 ${tournament.rewards[0]}
 🥈 ${tournament.rewards[1]}
 🥉 ${tournament.rewards[2]}
@@ -179,12 +180,13 @@ const embed=new EmbedBuilder()
 .setImage(REGISTER_IMG)
 
 .setDescription(`
-Server: **${tournament.server}**
-Map: **${tournament.map}**
+🎮 **Server:** ${tournament.server}
+🗺 **Map:** ${tournament.map}
 
-👥 Players **${tournament.players.length}/${tournament.max}**
+👥 **Players:** ${tournament.players.length}/${tournament.max}
 
-🏅 Rewards
+🏅 **Rewards**
+
 🥇 ${tournament.rewards[0]}
 🥈 ${tournament.rewards[1]}
 🥉 ${tournament.rewards[2]}
@@ -201,6 +203,8 @@ msg.edit({embeds:[embed]})
 client.on("interactionCreate",async i=>{
 
 if(!i.isButton()) return
+
+/* REGISTER */
 
 if(i.customId==="register"){
 
@@ -223,6 +227,8 @@ createBracket(i.channel)
 
 }
 
+/* UNREGISTER */
+
 if(i.customId==="unregister"){
 
 tournament.players=tournament.players.filter(x=>x!==i.user.id)
@@ -234,6 +240,8 @@ updatePanel(i.channel)
 i.reply({content:"Unregistered",ephemeral:true})
 
 }
+
+/* PARTICIPANTS */
 
 if(i.customId==="participants"){
 
@@ -251,6 +259,22 @@ ephemeral:true
 
 }
 
+/* NEXT ROUND */
+
+if(i.customId==="next_round"){
+
+if(!i.member.permissions.has("Administrator"))
+return i.reply({content:"Admin only",ephemeral:true})
+
+if(tournament.qualified.length<tournament.matches.length)
+return i.reply({content:"Wait all matches to finish",ephemeral:true})
+
+checkRound(i.channel)
+
+i.reply({content:"Next round created",ephemeral:true})
+
+}
+
 })
 
 /* ========= COMMANDS ========= */
@@ -262,6 +286,8 @@ if(!msg.content.startsWith(PREFIX)) return
 
 const args=msg.content.slice(PREFIX.length).split(" ")
 const cmd=args.shift().toLowerCase()
+
+/* CREATE TOUR */
 
 if(cmd==="tour"){
 
@@ -281,12 +307,53 @@ sendRegister(msg.channel)
 
 }
 
-/* ========= QUAL ========= */
+/* HELP COMMAND */
+
+if(cmd==="helpm"){
+
+const embed=new EmbedBuilder()
+
+.setTitle("🏆 Tournament Bot Help")
+
+.setDescription(`
+📌 **Tournament Commands**
+
+🎮 **Create Tournament**
+\`!tour players server map r1 r2 r3\`
+
+🏁 **Qualify Player**
+\`!qual @player\`
+
+🎮 **Send Room Code**
+\`!code CODE @player\`
+
+📊 **Bracket**
+Auto generated when players full
+
+⚡ **Next Round**
+Button below bracket (Admin only)
+`)
+
+.setImage(BRACKET_IMG)
+
+footer(embed,msg.guild)
+
+msg.channel.send({embeds:[embed]})
+
+}
+
+/* QUAL */
 
 if(cmd==="qual"){
 
 let user=msg.mentions.users.first()
 if(!user) return
+
+if(!tournament.players.includes(user.id))
+return msg.reply("Player not in tournament")
+
+if(tournament.qualified.includes(user.id))
+return msg.reply("Already qualified")
 
 tournament.qualified.push(user.id)
 
@@ -294,7 +361,45 @@ saveJSON("./tournament.json",tournament)
 
 updateBracket(msg.channel)
 
-checkRound(msg.channel)
+}
+
+/* CODE */
+
+if(cmd==="code"){
+
+let code=args[0]
+let p1=msg.mentions.users.first()
+
+if(!code || !p1) return msg.reply("Usage: !code CODE @player")
+
+let match=tournament.matches.find(
+m=>m.p1==p1.id || m.p2==p1.id
+)
+
+if(!match) return msg.reply("Match not found")
+
+let p2id=match.p1==p1.id?match.p2:match.p1
+let p2=await client.users.fetch(p2id)
+
+const embed=new EmbedBuilder()
+
+.setTitle("🎮 Match Room")
+
+.setDescription(`
+${p1.username} ${VS} ${p2.username}
+
+Room Code
+\`\`\`
+${code}
+\`\`\`
+`)
+
+footer(embed,msg.guild)
+
+p1.send({embeds:[embed]}).catch(()=>{})
+p2.send({embeds:[embed]}).catch(()=>{})
+
+msg.react("✅")
 
 }
 
@@ -327,16 +432,19 @@ async function sendBracket(channel){
 
 let text=""
 
-tournament.matches.forEach((m,i)=>{
+for(const [i,m] of tournament.matches.entries()){
 
-let winner=tournament.qualified.includes(m.p1)||tournament.qualified.includes(m.p2)
+let p1=(await client.users.fetch(m.p1)).username
+let p2=(await client.users.fetch(m.p2)).username
 
-text+=`Match ${i+1} ${winner?CHECK:""}
-<@${m.p1}> ${VS} <@${m.p2}>
+let win=tournament.qualified.includes(m.p1)||tournament.qualified.includes(m.p2)
+
+text+=`Match ${i+1} ${win?CHECK:""}
+${p1} ${VS} ${p2}
 
 `
 
-})
+}
 
 text+=`\n📊 Progress\n${progressBar()}`
 
@@ -348,7 +456,14 @@ const embed=new EmbedBuilder()
 
 footer(embed,channel.guild)
 
-let msg=await channel.send({embeds:[embed]})
+const row=new ActionRowBuilder().addComponents(
+new ButtonBuilder()
+.setCustomId("next_round")
+.setLabel("Next Round")
+.setStyle(ButtonStyle.Primary)
+)
+
+let msg=await channel.send({embeds:[embed],components:[row]})
 
 tournament.bracketMessageId=msg.id
 saveJSON("./tournament.json",tournament)
@@ -364,16 +479,19 @@ if(!msg) return
 
 let text=""
 
-tournament.matches.forEach((m,i)=>{
+for(const [i,m] of tournament.matches.entries()){
 
-let winner=tournament.qualified.includes(m.p1)||tournament.qualified.includes(m.p2)
+let p1=(await client.users.fetch(m.p1)).username
+let p2=(await client.users.fetch(m.p2)).username
 
-text+=`Match ${i+1} ${winner?CHECK:""}
-<@${m.p1}> ${VS} <@${m.p2}>
+let win=tournament.qualified.includes(m.p1)||tournament.qualified.includes(m.p2)
+
+text+=`Match ${i+1} ${win?CHECK:""}
+${p1} ${VS} ${p2}
 
 `
 
-})
+}
 
 text+=`\n📊 Progress\n${progressBar()}`
 
@@ -395,6 +513,11 @@ function checkRound(channel){
 
 if(tournament.qualified.length===tournament.matches.length){
 
+if(tournament.players.length<=2){
+announceWinner(channel)
+return
+}
+
 tournament.players=[...tournament.qualified]
 tournament.qualified=[]
 tournament.round++
@@ -404,6 +527,28 @@ saveJSON("./tournament.json",tournament)
 createBracket(channel)
 
 }
+
+}
+
+/* ========= WINNER ========= */
+
+async function announceWinner(channel){
+
+let first=await client.users.fetch(tournament.players[0])
+
+const embed=new EmbedBuilder()
+
+.setTitle(`🏆 ${first.username} WINS`)
+.setThumbnail(first.displayAvatarURL())
+
+.setDescription(`
+🥇 **${first.username}**
+${tournament.rewards[0]}
+`)
+
+footer(embed,channel.guild)
+
+channel.send({embeds:[embed]})
 
 }
 
