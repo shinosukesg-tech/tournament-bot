@@ -164,39 +164,6 @@ saveJSON("./tournament.json",tournament)
 
 }
 
-/* ========= UPDATE PANEL ========= */
-
-async function updatePanel(channel){
-
-if(!tournament.messageId) return
-
-let msg=await channel.messages.fetch(tournament.messageId).catch(()=>null)
-if(!msg) return
-
-const embed=new EmbedBuilder()
-
-.setTitle("🏆 Tournament Registration")
-.setImage(REGISTER_IMG)
-
-.setDescription(`
-🎮 **Server:** ${tournament.server}
-🗺 **Map:** ${tournament.map}
-
-👥 **Players:** ${tournament.players.length}/${tournament.max}
-
-🏅 **Rewards**
-
-🥇 ${tournament.rewards[0]}
-🥈 ${tournament.rewards[1]}
-🥉 ${tournament.rewards[2]}
-`)
-
-footer(embed,channel.guild)
-
-msg.edit({embeds:[embed]})
-
-}
-
 /* ========= COMMANDS ========= */
 
 client.on("messageCreate",async msg=>{
@@ -266,6 +233,47 @@ saveJSON("./tournament.json",tournament)
 updateBracket(msg.channel)
 
 checkRound(msg.channel)
+
+}
+
+/* ===== FIXED CODE COMMAND ===== */
+
+if(cmd==="code"){
+
+let code=args[0]
+let p1=msg.mentions.users.first()
+
+if(!code||!p1) return msg.reply("Usage: !code CODE @player")
+
+let match=tournament.matches.find(m=>m.p1==p1.id||m.p2==p1.id)
+
+if(!match) return msg.reply("Match not found")
+
+let opponentId=match.p1===p1.id?match.p2:match.p1
+
+if(!opponentId) return msg.reply("Opponent not found")
+
+let p2=await client.users.fetch(opponentId)
+
+const embed=new EmbedBuilder()
+
+.setTitle("🎮 Match Room")
+
+.setDescription(`
+${p1.username} ${VS} ${p2.username}
+
+Room Code
+\`\`\`
+${code}
+\`\`\`
+`)
+
+footer(embed,msg.guild)
+
+p1.send({embeds:[embed]}).catch(()=>{})
+p2.send({embeds:[embed]}).catch(()=>{})
+
+msg.reply("Room code sent to both players")
 
 }
 
