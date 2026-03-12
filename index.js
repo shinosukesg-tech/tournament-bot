@@ -2,7 +2,6 @@ require("dotenv").config()
 
 const express=require("express")
 const app=express()
-
 app.get("/",(req,res)=>res.send("Bot Running"))
 app.listen(process.env.PORT||3000)
 
@@ -12,9 +11,7 @@ GatewayIntentBits,
 EmbedBuilder,
 ActionRowBuilder,
 ButtonBuilder,
-ButtonStyle,
-PermissionsBitField,
-ChannelType
+ButtonStyle
 }=require("discord.js")
 
 const fs=require("fs")
@@ -42,8 +39,7 @@ max:0,
 server:"",
 map:"",
 rewards:[],
-messageId:null,
-bracketMessageId:null
+messageId:null
 })
 
 let commands=loadJSON("./commands.json",{prefix:"!"})
@@ -58,9 +54,7 @@ const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/14
 const FOOTER_ICON="https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg"
 
 const WELCOME_CHANNEL="1465234114318696498"
-const TICKET_CATEGORY="1480854630035357776"
 const MOD_ROLE="1429913618211672125"
-const HOSTER="1476446112675004640"
 
 const client=new Client({
 intents:[
@@ -72,7 +66,7 @@ GatewayIntentBits.GuildMembers
 })
 
 client.once("ready",()=>{
-console.log(`Logged as ${client.user.tag}`)
+console.log(`Logged in as ${client.user.tag}`)
 })
 
 function addFooter(embed){
@@ -82,8 +76,6 @@ iconURL:FOOTER_ICON
 })
 return embed
 }
-
-/* WELCOME */
 
 client.on("guildMemberAdd",member=>{
 
@@ -101,8 +93,6 @@ new EmbedBuilder()
 channel.send({content:`Welcome ${member}`,embeds:[embed]})
 
 })
-
-/* REGISTER PANEL */
 
 async function sendRegister(channel){
 
@@ -152,11 +142,7 @@ saveJSON("./tournament.json",tournament)
 
 async function createBracket(channel){
 
-/* DISABLE REGISTER PANEL */
-
 try{
-
-if(tournament.messageId){
 
 let panel=await channel.messages.fetch(tournament.messageId)
 
@@ -183,13 +169,7 @@ new ButtonBuilder()
 
 await panel.edit({components:[disabledRow]})
 
-}
-
-}catch(err){
-console.log("Panel disable error:",err)
-}
-
-/* SHUFFLE PLAYERS */
+}catch{}
 
 let shuffled=[...tournament.players].sort(()=>Math.random()-0.5)
 
@@ -197,22 +177,15 @@ tournament.matches=[]
 tournament.qualified=[]
 tournament.codes={}
 
-/* CREATE MATCHES */
-
 for(let i=0;i<shuffled.length;i+=2){
 
 if(!shuffled[i+1]) continue
 
 tournament.matches.push({
 p1:shuffled[i],
-p2:shuffled[i+1]
+p2:shuffled[i+1],
+winner:null
 })
-
-}
-
-saveJSON("./tournament.json",tournament)
-
-sendBracket(channel)
 
 }
 
@@ -233,7 +206,12 @@ let p2=(await client.users.fetch(m.p2)).username
 
 let code=tournament.codes[i+1]||"Not Set"
 
-text+=`Match ${i+1}
+let win=""
+if(m.winner) win=`${CHECK} Winner`
+
+text+=`
+${win}
+Match ${i+1}
 ${p1} ${VS} ${p2}
 Room: ${code}
 
@@ -255,14 +233,9 @@ new EmbedBuilder()
 .setDescription(text)
 )
 
-let msg=await channel.send({embeds:[embed],components:[row]})
-
-tournament.bracketMessageId=msg.id
-saveJSON("./tournament.json",tournament)
+channel.send({embeds:[embed],components:[row]})
 
 }
-
-/* BUTTONS */
 
 client.on("interactionCreate",async interaction=>{
 
@@ -292,6 +265,16 @@ createBracket(interaction.channel)
 
 }
 
+if(interaction.customId==="unregister"){
+
+tournament.players=tournament.players.filter(id=>id!==interaction.user.id)
+
+saveJSON("./tournament.json",tournament)
+
+interaction.reply({content:"Unregistered",ephemeral:true})
+
+}
+
 if(interaction.customId==="participants"){
 
 let list=""
@@ -313,20 +296,25 @@ if(interaction.customId==="next_round"){
 if(!interaction.member.roles.cache.has(MOD_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
-if(tournament.round>=Math.log2(tournament.max)){
+if(tournament.qualified.length<2)
+return interaction.reply({content:"Not enough qualified players",ephemeral:true})
 
-let winnerId=tournament.qualified[0]
-let winner=await client.users.fetch(winnerId)
+if(tournament.qualified.length===3){
+
+let first=await client.users.fetch(tournament.qualified[0])
+let second=await client.users.fetch(tournament.qualified[1])
+let third=await client.users.fetch(tournament.qualified[2])
 
 const embed=addFooter(
 new EmbedBuilder()
-.setTitle("🏆 Tournament Winner")
-.setThumbnail(winner.displayAvatarURL({size:512}))
+.setTitle("🏆 Tournament Results")
+.setThumbnail(first.displayAvatarURL({size:512}))
 .setDescription(`
-🥇 **${winner.username}**
+🥇 **${first.username}** — ${tournament.rewards[0]}
 
-🥈 ${tournament.rewards[1]}
-🥉 ${tournament.rewards[2]}
+🥈 **${second.username}** — ${tournament.rewards[1]}
+
+🥉 **${third.username}** — ${tournament.rewards[2]}
 `)
 )
 
@@ -345,8 +333,6 @@ createBracket(interaction.channel)
 }
 
 })
-
-/* COMMANDS */
 
 client.on("messageCreate",async msg=>{
 
@@ -374,8 +360,6 @@ sendRegister(msg.channel)
 
 }
 
-/* ROOM CODE */
-
 if(cmd==="code"){
 
 if(!msg.member.roles.cache.has(MOD_ROLE)) return
@@ -391,8 +375,6 @@ msg.channel.send(`Room code set for Match ${match}`)
 
 }
 
-/* QUALIFY */
-
 if(cmd==="qual"){
 
 if(!msg.member.roles.cache.has(MOD_ROLE)) return
@@ -403,13 +385,40 @@ if(!user) return msg.reply("Mention player")
 
 tournament.qualified.push(user.id)
 
+for(let m of tournament.matches){
+
+if(m.p1===user.id || m.p2===user.id){
+m.winner=user.id
+}
+
+}
+
 saveJSON("./tournament.json",tournament)
 
 msg.channel.send(`${CHECK} ${user.username} qualified`)
 
 }
 
+if(cmd==="helpm"){
+
+const embed=addFooter(
+new EmbedBuilder()
+.setTitle("📜 Bot Commands")
+.setDescription(`
+${PREFIX}tour <players> <server> <map> <reward1> <reward2> <reward3>
+
+${PREFIX}code <match> <roomcode>
+
+${PREFIX}qual @player
+
+${PREFIX}helpm
+`)
+)
+
+msg.channel.send({embeds:[embed]})
+
+}
+
 })
 
 client.login(process.env.TOKEN)
-
