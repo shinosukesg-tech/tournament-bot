@@ -144,14 +144,13 @@ saveJSON("./tournament.json",tournament)
 
 }
 
-/* bracket */
+/* create bracket */
 
 async function createBracket(channel){
 
 let shuffled=[...tournament.players].sort(()=>Math.random()-0.5)
 
 tournament.matches=[]
-tournament.qualified=[]
 tournament.codes={}
 
 for(let i=0;i<shuffled.length;i+=2){
@@ -172,6 +171,8 @@ sendBracket(channel)
 
 }
 
+/* send bracket */
+
 async function sendBracket(channel){
 
 let text=""
@@ -182,7 +183,7 @@ let p1=(await client.users.fetch(m.p1)).username
 let p2=(await client.users.fetch(m.p2)).username
 
 let win=""
-if(m.winner) win=`${CHECK} Winner`
+if(m.winner) win=`${CHECK}`
 
 text+=`
 ${win}
@@ -217,9 +218,15 @@ client.on("interactionCreate",async interaction=>{
 
 if(!interaction.isButton()) return
 
+/* register */
+
 if(interaction.customId==="register"){
 
+if(tournament.players.includes(interaction.user.id))
+return interaction.reply({content:"Already registered",ephemeral:true})
+
 tournament.players.push(interaction.user.id)
+
 saveJSON("./tournament.json",tournament)
 
 interaction.reply({content:"Registered",ephemeral:true})
@@ -227,6 +234,53 @@ interaction.reply({content:"Registered",ephemeral:true})
 if(tournament.players.length===tournament.max){
 createBracket(interaction.channel)
 }
+
+}
+
+/* next round */
+
+if(interaction.customId==="next_round"){
+
+if(!interaction.member.roles.cache.has(MOD_ROLE))
+return interaction.reply({content:"Staff only",ephemeral:true})
+
+if(tournament.qualified.length<2)
+return interaction.reply({content:"Finish matches first",ephemeral:true})
+
+/* finals */
+
+if(tournament.qualified.length===3){
+
+let first=await client.users.fetch(tournament.qualified[0])
+let second=await client.users.fetch(tournament.qualified[1])
+let third=await client.users.fetch(tournament.qualified[2])
+
+const embed=addFooter(
+new EmbedBuilder()
+.setTitle("🏆 Tournament Results")
+.setThumbnail(first.displayAvatarURL({size:512}))
+.setDescription(`
+🥇 **${first.username}** — ${tournament.rewards[0]}
+
+🥈 **${second.username}** — ${tournament.rewards[1]}
+
+🥉 **${third.username}** — ${tournament.rewards[2]}
+`)
+)
+
+interaction.channel.send({embeds:[embed]})
+return
+}
+
+/* next bracket */
+
+tournament.players=[...tournament.qualified]
+tournament.qualified=[]
+tournament.round++
+
+saveJSON("./tournament.json",tournament)
+
+createBracket(interaction.channel)
 
 }
 
@@ -239,7 +293,7 @@ client.on("messageCreate",async msg=>{
 if(msg.author.bot) return
 if(!msg.content.startsWith(PREFIX)) return
 
-setTimeout(()=>{msg.delete().catch(()=>{})},2000)
+setTimeout(()=>msg.delete().catch(()=>{}),1000)
 
 const args=msg.content.slice(PREFIX.length).split(" ")
 const cmd=args.shift().toLowerCase()
@@ -264,7 +318,7 @@ sendRegister(msg.channel)
 
 }
 
-/* room code */
+/* code */
 
 if(cmd==="code"){
 
@@ -274,7 +328,7 @@ let code=args[0]
 let p1=msg.mentions.users.first()
 let p2=msg.mentions.users.last()
 
-if(!code || !p1 || !p2) return
+if(!code||!p1||!p2) return
 
 const embed=addFooter(
 new EmbedBuilder()
@@ -295,12 +349,12 @@ ${code}
 p1.send({embeds:[embed]}).catch(()=>{})
 p2.send({embeds:[embed]}).catch(()=>{})
 
-let confirm=await msg.channel.send("Room code sent to players")
-setTimeout(()=>confirm.delete().catch(()=>{}),2000)
+let m=await msg.channel.send("Code sent")
+setTimeout(()=>m.delete().catch(()=>{}),1000)
 
 }
 
-/* qualify */
+/* qual */
 
 if(cmd==="qual"){
 
@@ -320,7 +374,9 @@ m.winner=user.id
 saveJSON("./tournament.json",tournament)
 
 let confirm=await msg.channel.send(`${CHECK} ${user.username} qualified`)
-setTimeout(()=>confirm.delete().catch(()=>{}),2000)
+setTimeout(()=>confirm.delete().catch(()=>{}),1000)
+
+sendBracket(msg.channel)
 
 }
 
