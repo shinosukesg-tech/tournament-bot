@@ -152,11 +152,52 @@ saveJSON("./tournament.json",tournament)
 
 async function createBracket(channel){
 
+/* DISABLE REGISTER PANEL */
+
+try{
+
+if(tournament.messageId){
+
+let panel=await channel.messages.fetch(tournament.messageId)
+
+const disabledRow=new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("register")
+.setLabel("Register")
+.setStyle(ButtonStyle.Success)
+.setDisabled(true),
+
+new ButtonBuilder()
+.setCustomId("unregister")
+.setLabel("Unregister")
+.setStyle(ButtonStyle.Danger)
+.setDisabled(true),
+
+new ButtonBuilder()
+.setCustomId("participants")
+.setLabel("Participants")
+.setStyle(ButtonStyle.Secondary)
+
+)
+
+await panel.edit({components:[disabledRow]})
+
+}
+
+}catch(err){
+console.log("Panel disable error:",err)
+}
+
+/* SHUFFLE PLAYERS */
+
 let shuffled=[...tournament.players].sort(()=>Math.random()-0.5)
 
 tournament.matches=[]
 tournament.qualified=[]
 tournament.codes={}
+
+/* CREATE MATCHES */
 
 for(let i=0;i<shuffled.length;i+=2){
 
@@ -166,6 +207,12 @@ tournament.matches.push({
 p1:shuffled[i],
 p2:shuffled[i+1]
 })
+
+}
+
+saveJSON("./tournament.json",tournament)
+
+sendBracket(channel)
 
 }
 
@@ -365,3 +412,4 @@ msg.channel.send(`${CHECK} ${user.username} qualified`)
 })
 
 client.login(process.env.TOKEN)
+
