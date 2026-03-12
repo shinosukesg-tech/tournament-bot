@@ -198,6 +198,32 @@ if(interaction.customId==="register"){
 if(tournament.players.includes(interaction.user.id))
 return interaction.reply({content:"Already registered",ephemeral:true})
 
+if(tournament.players.length>=tournament.max)
+return interaction.reply({content:"Tournament full",ephemeral:true})
+
+tournament.players.push(interaction.user.id)
+
+saveJSON("./tournament.json",tournament)
+
+updatePanel(interaction.channel)
+
+interaction.reply({content:"Registered",ephemeral:true})
+
+/* AUTO START WHEN FULL */
+
+if(tournament.players.length===tournament.max){
+
+interaction.channel.send("🏁 Tournament Full! Creating Matches...")
+
+createBracket(interaction.channel)
+
+}
+
+}
+
+if(tournament.players.includes(interaction.user.id))
+return interaction.reply({content:"Already registered",ephemeral:true})
+
 tournament.players.push(interaction.user.id)
 
 saveJSON("./tournament.json",tournament)
@@ -381,3 +407,4 @@ components:[row]
 })
 
 client.login(process.env.TOKEN)
+
