@@ -1,14 +1,10 @@
 require("dotenv").config()
 
-/* ========= EXPRESS ========= */
-
 const express=require("express")
 const app=express()
 
 app.get("/",(req,res)=>res.send("Bot Running"))
 app.listen(process.env.PORT||3000)
-
-/* ========= DISCORD ========= */
 
 const {
 Client,
@@ -17,12 +13,11 @@ EmbedBuilder,
 ActionRowBuilder,
 ButtonBuilder,
 ButtonStyle,
+PermissionsBitField,
 ChannelType
 }=require("discord.js")
 
 const fs=require("fs")
-
-/* ========= FILES ========= */
 
 function loadJSON(file,def){
 try{return JSON.parse(fs.readFileSync(file))}
@@ -46,16 +41,19 @@ messageId:null,
 bracketMessageId:null
 })
 
-let welcome=loadJSON("./welcome.json",{channel:null})
-
 let commands=loadJSON("./commands.json",{prefix:"!"})
+const PREFIX=commands.prefix||"!"
 
-let ticket=loadJSON("./ticket.json",{
-category:"1480854630035357776",
-moderatorRole:"Moderator"
-})
+const VS="<:VS:1477014161484677150>"
+const CHECK="<:check:1480513506871742575>"
 
-/* ========= CLIENT ========= */
+const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
+const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
+
+const WELCOME_CHANNEL="1465234114318696498"
+const TICKET_CATEGORY="1480854630035357776"
+const MOD_ROLE="1429913618211672125"
+const HOSTER="1476446112675004640"
 
 const client=new Client({
 intents:[
@@ -66,77 +64,69 @@ GatewayIntentBits.GuildMembers
 ]
 })
 
-const PREFIX=commands.prefix||"!"
-
-/* ========= EMOJIS ========= */
-
-const VS="<:VS:1477014161484677150>"
-const CHECK="<:check:1480513506871742575>"
-
-/* ========= IMAGES ========= */
-
-const REGISTER_IMG="https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png"
-const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
-const FOOTER_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg"
-
-/* ========= TIME ========= */
-
-function ist(){
-return new Date().toLocaleString("en-IN",{timeZone:"Asia/Kolkata"})
-}
-
-/* ========= FOOTER ========= */
-
-function footer(embed,guild){
-embed.setFooter({
-text:`Enjoy The Fun | ShinosukeSG\n${ist()}`,
-iconURL:FOOTER_IMG
-})
-}
-
-/* ========= PROGRESS BAR ========= */
-
-function progressBar(){
-
-let done=tournament.qualified.length
-let total=tournament.matches.length||1
-
-let size=10
-let filled=Math.round((done/total)*size)
-
-return "█".repeat(filled)+"░".repeat(size-filled)+` ${done}/${total}`
-
-}
-
-/* ========= READY ========= */
-
 client.once("ready",()=>{
 console.log(`Logged as ${client.user.tag}`)
 })
 
-/* ========= REGISTER PANEL ========= */
+/* WELCOME */
+
+client.on("guildMemberAdd",member=>{
+
+const channel=member.guild.channels.cache.get(WELCOME_CHANNEL)
+if(!channel) return
+
+const embed=new EmbedBuilder()
+
+.setColor("#a855f7")
+.setTitle(`Welcome ${member.user.username} 👋`)
+.setThumbnail(member.user.displayAvatarURL())
+
+.setDescription(`
+Welcome **${member.user.username}** to **${member.guild.name}**
+
+🆔 **User ID**
+${member.id}
+
+📅 **Account Created**
+<t:${Math.floor(member.user.createdTimestamp/1000)}:D>
+
+⏳ **Account Age**
+${Math.floor((Date.now()-member.user.createdTimestamp)/86400000)} days
+
+🎭 **Display Name**
+${member.displayName}
+`)
+
+channel.send({
+content:`Welcome ${member}`,
+embeds:[embed]
+})
+
+})
+
+/* TOURNAMENT REGISTER PANEL */
 
 async function sendRegister(channel){
 
 const embed=new EmbedBuilder()
 
-.setTitle("🏆 Tournament Registration")
+.setTitle("🏆 ShinTours Tournament")
 .setImage(REGISTER_IMG)
 
 .setDescription(`
-🎮 **Server:** ${tournament.server}
+
+🌐 **Server:** ${tournament.server}
 🗺 **Map:** ${tournament.map}
 
 👥 **Players:** ${tournament.players.length}/${tournament.max}
 
-🏅 **Rewards**
+🎁 **Rewards**
 
 🥇 ${tournament.rewards[0]}
 🥈 ${tournament.rewards[1]}
 🥉 ${tournament.rewards[2]}
-`)
 
-footer(embed,channel.guild)
+`)
 
 const row=new ActionRowBuilder().addComponents(
 
@@ -164,7 +154,157 @@ saveJSON("./tournament.json",tournament)
 
 }
 
-/* ========= COMMANDS ========= */
+async function updatePanel(channel){
+
+if(!tournament.messageId) return
+
+let msg=await channel.messages.fetch(tournament.messageId).catch(()=>null)
+if(!msg) return
+
+const embed=new EmbedBuilder()
+
+.setTitle("🏆 ShinTours Tournament")
+.setImage(REGISTER_IMG)
+
+.setDescription(`
+
+🌐 **Server:** ${tournament.server}
+🗺 **Map:** ${tournament.map}
+
+👥 **Players:** ${tournament.players.length}/${tournament.max}
+
+🎁 **Rewards**
+
+🥇 ${tournament.rewards[0]}
+🥈 ${tournament.rewards[1]}
+🥉 ${tournament.rewards[2]}
+
+`)
+
+msg.edit({embeds:[embed]})
+
+}
+
+/* BUTTON INTERACTIONS */
+
+client.on("interactionCreate",async interaction=>{
+
+if(!interaction.isButton()) return
+
+/* REGISTER */
+
+if(interaction.customId==="register"){
+
+if(tournament.players.includes(interaction.user.id))
+return interaction.reply({content:"Already registered",ephemeral:true})
+
+tournament.players.push(interaction.user.id)
+
+saveJSON("./tournament.json",tournament)
+
+updatePanel(interaction.channel)
+
+interaction.reply({content:"Registered",ephemeral:true})
+
+}
+
+/* UNREGISTER */
+
+if(interaction.customId==="unregister"){
+
+tournament.players=tournament.players.filter(x=>x!==interaction.user.id)
+
+saveJSON("./tournament.json",tournament)
+
+updatePanel(interaction.channel)
+
+interaction.reply({content:"Unregistered",ephemeral:true})
+
+}
+
+/* PARTICIPANTS */
+
+if(interaction.customId==="participants"){
+
+let list=""
+
+for(let id of tournament.players){
+
+let u=await client.users.fetch(id)
+list+=`${u.username}\n`
+
+}
+
+interaction.reply({
+content:`Participants\n\n${list||"None"}`,
+ephemeral:true
+})
+
+}
+
+/* SUPPORT TICKET */
+
+if(interaction.customId==="support"){
+
+let channel=await interaction.guild.channels.create({
+
+name:`ticket-${interaction.user.username}`,
+type:ChannelType.GuildText,
+parent:TICKET_CATEGORY,
+
+permissionOverwrites:[
+
+{
+id:interaction.guild.id,
+deny:[PermissionsBitField.Flags.ViewChannel]
+},
+
+{
+id:interaction.user.id,
+allow:[PermissionsBitField.Flags.ViewChannel]
+},
+
+{
+id:MOD_ROLE,
+allow:[PermissionsBitField.Flags.ViewChannel]
+}
+
+]
+
+})
+
+const row=new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("close_ticket")
+.setLabel("Close Ticket")
+.setStyle(ButtonStyle.Danger)
+
+)
+
+channel.send({
+content:`🎫 Ticket opened by ${interaction.user}`,
+components:[row]
+})
+
+interaction.reply({content:`Ticket created ${channel}`,ephemeral:true})
+
+}
+
+/* CLOSE TICKET */
+
+if(interaction.customId==="close_ticket"){
+
+if(!interaction.member.roles.cache.has(MOD_ROLE))
+return interaction.reply({content:"Moderator only",ephemeral:true})
+
+interaction.channel.delete()
+
+}
+
+})
+
+/* COMMANDS */
 
 client.on("messageCreate",async msg=>{
 
@@ -174,7 +314,7 @@ if(!msg.content.startsWith(PREFIX)) return
 const args=msg.content.slice(PREFIX.length).split(" ")
 const cmd=args.shift().toLowerCase()
 
-/* CREATE TOUR */
+/* START TOURNAMENT */
 
 if(cmd==="tour"){
 
@@ -194,241 +334,50 @@ sendRegister(msg.channel)
 
 }
 
-/* HELP */
+/* TICKET PANEL */
 
-if(cmd==="helpm"){
-
-const embed=new EmbedBuilder()
-
-.setTitle("🏆 Tournament Bot Commands")
-
-.setDescription(`
-🎮 **Tournament**
-\`!tour players server map r1 r2 r3\`
-
-🏁 **Qualify**
-\`!qual @player\`
-
-🏠 **Room Code**
-\`!code CODE @player\`
-`)
-
-footer(embed,msg.guild)
-
-msg.channel.send({embeds:[embed]})
-
-}
-
-/* QUAL */
-
-if(cmd==="qual"){
-
-let user=msg.mentions.users.first()
-if(!user) return
-
-tournament.qualified.push(user.id)
-
-saveJSON("./tournament.json",tournament)
-
-updateBracket(msg.channel)
-
-checkRound(msg.channel)
-
-}
-
-/* ===== FIXED CODE COMMAND ===== */
-
-if(cmd==="code"){
-
-let code=args[0]
-let p1=msg.mentions.users.first()
-
-if(!code||!p1) return msg.reply("Usage: !code CODE @player")
-
-let match=tournament.matches.find(m=>m.p1==p1.id||m.p2==p1.id)
-
-if(!match) return msg.reply("Match not found")
-
-let opponentId=match.p1===p1.id?match.p2:match.p1
-
-if(!opponentId) return msg.reply("Opponent not found")
-
-let p2=await client.users.fetch(opponentId)
+if(cmd==="ticketpanel"){
 
 const embed=new EmbedBuilder()
 
-.setTitle("🎮 Match Room")
+.setTitle("🎟 Ticket System")
 
 .setDescription(`
-${p1.username} ${VS} ${p2.username}
+Select an option below:
 
-Room Code
-\`\`\`
-${code}
-\`\`\`
+🛡 **Support** → Need help
+📋 **Apply** → Apply for staff
+🎁 **Reward** → Claim reward
 `)
 
-footer(embed,msg.guild)
+.setImage("https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png?ex=69b3a1c4&is=69b25044&hm=dcface5427862d440922451a6a5ccce6c18fc81cb80e7de7519176b3ee2bf7ea&")
 
-p1.send({embeds:[embed]}).catch(()=>{})
-p2.send({embeds:[embed]}).catch(()=>{})
+const row=new ActionRowBuilder().addComponents(
 
-msg.reply("Room code sent to both players")
+new ButtonBuilder()
+.setCustomId("support")
+.setLabel("Support")
+.setStyle(ButtonStyle.Danger),
 
-}
+new ButtonBuilder()
+.setCustomId("apply")
+.setLabel("Apply")
+.setStyle(ButtonStyle.Success),
 
-})
+new ButtonBuilder()
+.setCustomId("reward")
+.setLabel("Reward")
+.setStyle(ButtonStyle.Primary)
 
-/* ========= BRACKET ========= */
+)
 
-function createBracket(channel){
-
-let arr=[...tournament.players].sort(()=>Math.random()-0.5)
-
-tournament.matches=[]
-
-for(let i=0;i<arr.length;i+=2){
-
-if(!arr[i+1]) continue
-
-tournament.matches.push({
-p1:arr[i],
-p2:arr[i+1]
+msg.channel.send({
+embeds:[embed],
+components:[row]
 })
 
 }
 
-saveJSON("./tournament.json",tournament)
-
-sendBracket(channel)
-
-}
-
-async function sendBracket(channel){
-
-let text=""
-
-for(const [i,m] of tournament.matches.entries()){
-
-let p1=(await client.users.fetch(m.p1)).username
-let p2=(await client.users.fetch(m.p2)).username
-
-let win=tournament.qualified.includes(m.p1)||tournament.qualified.includes(m.p2)
-
-text+=`Match ${i+1} ${win?CHECK:""}
-${p1} ${VS} ${p2}
-
-`
-
-}
-
-text+=`\n📊 Progress\n${progressBar()}`
-
-const embed=new EmbedBuilder()
-
-.setTitle(`Round ${tournament.round}`)
-.setImage(BRACKET_IMG)
-.setDescription(text)
-
-footer(embed,channel.guild)
-
-let msg=await channel.send({embeds:[embed]})
-
-tournament.bracketMessageId=msg.id
-saveJSON("./tournament.json",tournament)
-
-}
-
-async function updateBracket(channel){
-
-if(!tournament.bracketMessageId) return
-
-let msg=await channel.messages.fetch(tournament.bracketMessageId).catch(()=>null)
-if(!msg) return
-
-let text=""
-
-for(const [i,m] of tournament.matches.entries()){
-
-let p1=(await client.users.fetch(m.p1)).username
-let p2=(await client.users.fetch(m.p2)).username
-
-let win=tournament.qualified.includes(m.p1)||tournament.qualified.includes(m.p2)
-
-text+=`Match ${i+1} ${win?CHECK:""}
-${p1} ${VS} ${p2}
-
-`
-
-}
-
-text+=`\n📊 Progress\n${progressBar()}`
-
-const embed=new EmbedBuilder()
-
-.setTitle(`Round ${tournament.round}`)
-.setImage(BRACKET_IMG)
-.setDescription(text)
-
-footer(embed,channel.guild)
-
-msg.edit({embeds:[embed]})
-
-}
-
-/* ========= ROUND CHECK ========= */
-
-function checkRound(channel){
-
-if(tournament.qualified.length===tournament.matches.length){
-
-if(tournament.qualified.length===1){
-
-announceWinner(channel)
-return
-
-}
-
-tournament.players=[...tournament.qualified]
-tournament.qualified=[]
-tournament.round++
-
-createBracket(channel)
-
-}
-
-}
-
-/* ========= WINNER ========= */
-
-async function announceWinner(channel){
-
-let winner=await client.users.fetch(tournament.players[0])
-let second=await client.users.fetch(tournament.players[1]||tournament.players[0])
-let third=await client.users.fetch(tournament.players[2]||tournament.players[0])
-
-const embed=new EmbedBuilder()
-
-.setTitle(`🏆 ${winner.username} WINS`)
-.setThumbnail(winner.displayAvatarURL({size:512}))
-
-.setDescription(`
-🥇 **${winner.username}**
-${tournament.rewards[0]}
-
-🥈 ${second.username}
-${tournament.rewards[1]}
-
-🥉 ${third.username}
-${tournament.rewards[2]}
-`)
-
-footer(embed,channel.guild)
-
-channel.send({embeds:[embed]})
-
-}
-
-/* ========= LOGIN ========= */
+})
 
 client.login(process.env.TOKEN)
