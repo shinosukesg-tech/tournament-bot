@@ -78,7 +78,7 @@ iconURL:FOOTER_ICON
 return embed
 }
 
-/* welcome */
+/* WELCOME */
 
 client.on("guildMemberAdd",member=>{
 
@@ -97,7 +97,7 @@ channel.send({content:`Welcome ${member}`,embeds:[embed]})
 
 })
 
-/* ticket panel command */
+/* TICKET PANEL COMMAND */
 
 client.on("messageCreate",async msg=>{
 
@@ -122,7 +122,7 @@ msg.channel.send({embeds:[embed],components:[row]})
 
 })
 
-/* ticket system */
+/* TICKET SYSTEM */
 
 client.on("interactionCreate",async interaction=>{
 
@@ -141,6 +141,10 @@ deny:[PermissionsBitField.Flags.ViewChannel]
 },
 {
 id:interaction.user.id,
+allow:[PermissionsBitField.Flags.ViewChannel]
+},
+{
+id:MOD_ROLE,
 allow:[PermissionsBitField.Flags.ViewChannel]
 }
 ]
@@ -165,13 +169,16 @@ interaction.reply({content:"Ticket created",ephemeral:true})
 
 if(interaction.customId==="close_ticket"){
 
+if(!interaction.member.roles.cache.has(MOD_ROLE))
+return interaction.reply({content:"Staff only",ephemeral:true})
+
 interaction.channel.delete()
 
 }
 
 })
 
-/* tournament panel */
+/* REGISTER PANEL */
 
 async function sendRegister(channel){
 
@@ -219,7 +226,7 @@ saveJSON("./tournament.json",tournament)
 
 }
 
-/* bracket */
+/* CREATE BRACKET */
 
 async function createBracket(channel){
 
@@ -230,7 +237,7 @@ tournament.qualified=[]
 
 for(let i=0;i<shuffled.length;i+=2){
 
-if(!shuffled[i+1]) continue
+if(!shuffled[i+1]) break
 
 tournament.matches.push({
 p1:shuffled[i],
@@ -245,6 +252,8 @@ saveJSON("./tournament.json",tournament)
 sendBracket(channel)
 
 }
+
+/* SEND BRACKET */
 
 async function sendBracket(channel){
 
@@ -264,7 +273,6 @@ Match ${i+1}
 ${p1} ${VS} ${p2}
 
 `
-
 }
 
 const row=new ActionRowBuilder().addComponents(
@@ -285,11 +293,13 @@ channel.send({embeds:[embed],components:[row]})
 
 }
 
-/* buttons */
+/* BUTTON HANDLER */
 
 client.on("interactionCreate",async interaction=>{
 
 if(!interaction.isButton()) return
+
+/* REGISTER */
 
 if(interaction.customId==="register"){
 
@@ -308,6 +318,8 @@ createBracket(interaction.channel)
 
 }
 
+/* UNREGISTER */
+
 if(interaction.customId==="unregister"){
 
 tournament.players=tournament.players.filter(p=>p!==interaction.user.id)
@@ -316,6 +328,8 @@ saveJSON("./tournament.json",tournament)
 interaction.reply({content:"Unregistered",ephemeral:true})
 
 }
+
+/* PARTICIPANTS */
 
 if(interaction.customId==="participants"){
 
@@ -330,12 +344,21 @@ interaction.reply({content:list||"None",ephemeral:true})
 
 }
 
+/* NEXT ROUND */
+
 if(interaction.customId==="next_round"){
 
 if(!interaction.member.roles.cache.has(MOD_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
-if(tournament.qualified.length===3){
+if(tournament.qualified.length < 2){
+return interaction.reply({
+content:"Not enough qualified players",
+ephemeral:true
+})
+}
+
+if(tournament.qualified.length === 3){
 
 let first=await client.users.fetch(tournament.qualified[0])
 let second=await client.users.fetch(tournament.qualified[1])
@@ -366,11 +389,13 @@ saveJSON("./tournament.json",tournament)
 
 createBracket(interaction.channel)
 
+interaction.reply({content:"Next round created",ephemeral:true})
+
 }
 
 })
 
-/* commands */
+/* COMMANDS */
 
 client.on("messageCreate",async msg=>{
 
