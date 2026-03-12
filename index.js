@@ -11,7 +11,9 @@ GatewayIntentBits,
 EmbedBuilder,
 ActionRowBuilder,
 ButtonBuilder,
-ButtonStyle
+ButtonStyle,
+PermissionsBitField,
+ChannelType
 }=require("discord.js")
 
 const fs=require("fs")
@@ -33,7 +35,6 @@ let tournament=loadJSON("./tournament.json",{
 players:[],
 matches:[],
 qualified:[],
-codes:{},
 round:1,
 max:0,
 server:"",
@@ -42,8 +43,7 @@ rewards:[],
 messageId:null
 })
 
-let commands=loadJSON("./commands.json",{prefix:"!"})
-const PREFIX=commands.prefix||"!"
+const PREFIX="!"
 
 const VS="<:VS:1477014161484677150>"
 const CHECK="<:check:1480513506871742575>"
@@ -54,6 +54,7 @@ const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/14
 const FOOTER_ICON="https://cdn.discordapp.com/attachments/1471952333209604239/1480914400314392627/Screenshot_20260310_183459_Discord.jpg"
 
 const WELCOME_CHANNEL="1465234114318696498"
+const TICKET_CATEGORY="1480854630035357776"
 const MOD_ROLE="1429913618211672125"
 
 const client=new Client({
@@ -96,7 +97,81 @@ channel.send({content:`Welcome ${member}`,embeds:[embed]})
 
 })
 
-/* register panel */
+/* ticket panel command */
+
+client.on("messageCreate",async msg=>{
+
+if(msg.author.bot) return
+
+if(msg.content==="!ticketpanel"){
+
+const embed=new EmbedBuilder()
+.setTitle("🎫 Support Ticket")
+.setDescription("Press button to create ticket")
+
+const row=new ActionRowBuilder().addComponents(
+new ButtonBuilder()
+.setCustomId("create_ticket")
+.setLabel("Create Ticket")
+.setStyle(ButtonStyle.Primary)
+)
+
+msg.channel.send({embeds:[embed],components:[row]})
+
+}
+
+})
+
+/* ticket system */
+
+client.on("interactionCreate",async interaction=>{
+
+if(!interaction.isButton()) return
+
+if(interaction.customId==="create_ticket"){
+
+const channel=await interaction.guild.channels.create({
+name:`ticket-${interaction.user.username}`,
+type:ChannelType.GuildText,
+parent:TICKET_CATEGORY,
+permissionOverwrites:[
+{
+id:interaction.guild.roles.everyone,
+deny:[PermissionsBitField.Flags.ViewChannel]
+},
+{
+id:interaction.user.id,
+allow:[PermissionsBitField.Flags.ViewChannel]
+}
+]
+})
+
+const embed=new EmbedBuilder()
+.setTitle("Support Ticket")
+.setDescription("Staff will assist you shortly.")
+
+const row=new ActionRowBuilder().addComponents(
+new ButtonBuilder()
+.setCustomId("close_ticket")
+.setLabel("Close Ticket")
+.setStyle(ButtonStyle.Danger)
+)
+
+channel.send({content:`${interaction.user}`,embeds:[embed],components:[row]})
+
+interaction.reply({content:"Ticket created",ephemeral:true})
+
+}
+
+if(interaction.customId==="close_ticket"){
+
+interaction.channel.delete()
+
+}
+
+})
+
+/* tournament panel */
 
 async function sendRegister(channel){
 
@@ -144,14 +219,14 @@ saveJSON("./tournament.json",tournament)
 
 }
 
-/* create bracket */
+/* bracket */
 
 async function createBracket(channel){
 
 let shuffled=[...tournament.players].sort(()=>Math.random()-0.5)
 
 tournament.matches=[]
-tournament.codes={}
+tournament.qualified=[]
 
 for(let i=0;i<shuffled.length;i+=2){
 
@@ -171,8 +246,6 @@ sendBracket(channel)
 
 }
 
-/* send bracket */
-
 async function sendBracket(channel){
 
 let text=""
@@ -182,11 +255,11 @@ for(const [i,m] of tournament.matches.entries()){
 let p1=(await client.users.fetch(m.p1)).username
 let p2=(await client.users.fetch(m.p2)).username
 
-let win=""
-if(m.winner) win=`${CHECK}`
+let tick=""
+if(m.winner) tick=`${CHECK}`
 
 text+=`
-${win}
+${tick}
 Match ${i+1}
 ${p1} ${VS} ${p2}
 
@@ -218,8 +291,6 @@ client.on("interactionCreate",async interaction=>{
 
 if(!interaction.isButton()) return
 
-/* register */
-
 if(interaction.customId==="register"){
 
 if(tournament.players.includes(interaction.user.id))
@@ -237,17 +308,32 @@ createBracket(interaction.channel)
 
 }
 
-/* next round */
+if(interaction.customId==="unregister"){
+
+tournament.players=tournament.players.filter(p=>p!==interaction.user.id)
+saveJSON("./tournament.json",tournament)
+
+interaction.reply({content:"Unregistered",ephemeral:true})
+
+}
+
+if(interaction.customId==="participants"){
+
+let list=""
+
+for(let id of tournament.players){
+let u=await client.users.fetch(id)
+list+=`${u.username}\n`
+}
+
+interaction.reply({content:list||"None",ephemeral:true})
+
+}
 
 if(interaction.customId==="next_round"){
 
 if(!interaction.member.roles.cache.has(MOD_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
-
-if(tournament.qualified.length<2)
-return interaction.reply({content:"Finish matches first",ephemeral:true})
-
-/* finals */
 
 if(tournament.qualified.length===3){
 
@@ -258,7 +344,7 @@ let third=await client.users.fetch(tournament.qualified[2])
 const embed=addFooter(
 new EmbedBuilder()
 .setTitle("🏆 Tournament Results")
-.setThumbnail(first.displayAvatarURL({size:512}))
+.setThumbnail(first.displayAvatarURL())
 .setDescription(`
 🥇 **${first.username}** — ${tournament.rewards[0]}
 
@@ -271,8 +357,6 @@ new EmbedBuilder()
 interaction.channel.send({embeds:[embed]})
 return
 }
-
-/* next bracket */
 
 tournament.players=[...tournament.qualified]
 tournament.qualified=[]
@@ -298,8 +382,6 @@ setTimeout(()=>msg.delete().catch(()=>{}),1000)
 const args=msg.content.slice(PREFIX.length).split(" ")
 const cmd=args.shift().toLowerCase()
 
-/* create tournament */
-
 if(cmd==="tour"){
 
 tournament.max=parseInt(args[0])
@@ -318,11 +400,7 @@ sendRegister(msg.channel)
 
 }
 
-/* code */
-
 if(cmd==="code"){
-
-if(!msg.member.roles.cache.has(MOD_ROLE)) return
 
 let code=args[0]
 let p1=msg.mentions.users.first()
@@ -354,11 +432,7 @@ setTimeout(()=>m.delete().catch(()=>{}),1000)
 
 }
 
-/* qual */
-
 if(cmd==="qual"){
-
-if(!msg.member.roles.cache.has(MOD_ROLE)) return
 
 let user=msg.mentions.users.first()
 if(!user) return
@@ -373,14 +447,12 @@ m.winner=user.id
 
 saveJSON("./tournament.json",tournament)
 
-let confirm=await msg.channel.send(`${CHECK} ${user.username} qualified`)
-setTimeout(()=>confirm.delete().catch(()=>{}),1000)
+let m=await msg.channel.send(`${CHECK} ${user.username} qualified`)
+setTimeout(()=>m.delete().catch(()=>{}),1000)
 
 sendBracket(msg.channel)
 
 }
-
-/* help */
 
 if(cmd==="helpm"){
 
@@ -393,6 +465,8 @@ new EmbedBuilder()
 !code <roomcode> @p1 @p2
 
 !qual @player
+
+!ticketpanel
 
 !helpm
 `)
