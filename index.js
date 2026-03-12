@@ -76,7 +76,6 @@ const channel=member.guild.channels.cache.get(WELCOME_CHANNEL)
 if(!channel) return
 
 const embed=new EmbedBuilder()
-
 .setColor("#a855f7")
 .setTitle(`Welcome ${member.user.username} 👋`)
 .setThumbnail(member.user.displayAvatarURL())
@@ -104,7 +103,7 @@ embeds:[embed]
 
 })
 
-/* TOURNAMENT REGISTER PANEL */
+/* REGISTER PANEL */
 
 async function sendRegister(channel){
 
@@ -114,7 +113,6 @@ const embed=new EmbedBuilder()
 .setImage(REGISTER_IMG)
 
 .setDescription(`
-
 🌐 **Server:** ${tournament.server}
 🗺 **Map:** ${tournament.map}
 
@@ -125,7 +123,6 @@ const embed=new EmbedBuilder()
 🥇 ${tournament.rewards[0]}
 🥈 ${tournament.rewards[1]}
 🥉 ${tournament.rewards[2]}
-
 `)
 
 const row=new ActionRowBuilder().addComponents(
@@ -167,7 +164,6 @@ const embed=new EmbedBuilder()
 .setImage(REGISTER_IMG)
 
 .setDescription(`
-
 🌐 **Server:** ${tournament.server}
 🗺 **Map:** ${tournament.map}
 
@@ -178,14 +174,68 @@ const embed=new EmbedBuilder()
 🥇 ${tournament.rewards[0]}
 🥈 ${tournament.rewards[1]}
 🥉 ${tournament.rewards[2]}
-
 `)
 
 msg.edit({embeds:[embed]})
 
 }
 
-/* BUTTON INTERACTIONS */
+/* CREATE BRACKET */
+
+async function createBracket(channel){
+
+let shuffled=[...tournament.players].sort(()=>Math.random()-0.5)
+
+tournament.matches=[]
+
+for(let i=0;i<shuffled.length;i+=2){
+
+if(!shuffled[i+1]) continue
+
+tournament.matches.push({
+p1:shuffled[i],
+p2:shuffled[i+1]
+})
+
+}
+
+saveJSON("./tournament.json",tournament)
+
+sendBracket(channel)
+
+}
+
+/* SEND BRACKET */
+
+async function sendBracket(channel){
+
+let text=""
+
+for(const [i,m] of tournament.matches.entries()){
+
+let p1=(await client.users.fetch(m.p1)).username
+let p2=(await client.users.fetch(m.p2)).username
+
+text+=`Match ${i+1}
+${p1} ${VS} ${p2}
+
+`
+
+}
+
+const embed=new EmbedBuilder()
+.setTitle(`Round ${tournament.round}`)
+.setImage(BRACKET_IMG)
+.setDescription(text)
+
+let msg=await channel.send({embeds:[embed]})
+
+tournament.bracketMessageId=msg.id
+saveJSON("./tournament.json",tournament)
+
+}
+
+/* BUTTONS */
 
 client.on("interactionCreate",async interaction=>{
 
@@ -209,8 +259,6 @@ updatePanel(interaction.channel)
 
 interaction.reply({content:"Registered",ephemeral:true})
 
-/* AUTO START WHEN FULL */
-
 if(tournament.players.length===tournament.max){
 
 interaction.channel.send("🏁 Tournament Full! Creating Matches...")
@@ -218,19 +266,6 @@ interaction.channel.send("🏁 Tournament Full! Creating Matches...")
 createBracket(interaction.channel)
 
 }
-
-}
-
-if(tournament.players.includes(interaction.user.id))
-return interaction.reply({content:"Already registered",ephemeral:true})
-
-tournament.players.push(interaction.user.id)
-
-saveJSON("./tournament.json",tournament)
-
-updatePanel(interaction.channel)
-
-interaction.reply({content:"Registered",ephemeral:true})
 
 }
 
@@ -270,11 +305,13 @@ ephemeral:true
 
 /* SUPPORT TICKET */
 
-if(interaction.customId==="support"){
+if(["support","apply","reward"].includes(interaction.customId)){
+
+let type=interaction.customId
 
 let channel=await interaction.guild.channels.create({
 
-name:`ticket-${interaction.user.username}`,
+name:`${type}-${interaction.user.username}`,
 type:ChannelType.GuildText,
 parent:TICKET_CATEGORY,
 
@@ -340,7 +377,7 @@ if(!msg.content.startsWith(PREFIX)) return
 const args=msg.content.slice(PREFIX.length).split(" ")
 const cmd=args.shift().toLowerCase()
 
-/* START TOURNAMENT */
+/* START TOUR */
 
 if(cmd==="tour"){
 
@@ -369,14 +406,10 @@ const embed=new EmbedBuilder()
 .setTitle("🎟 Ticket System")
 
 .setDescription(`
-Select an option below:
-
 🛡 **Support** → Need help
 📋 **Apply** → Apply for staff
 🎁 **Reward** → Claim reward
 `)
-
-.setImage("https://cdn.discordapp.com/attachments/1478807590971506770/1478807724924866806/Event_Background_MHA_Generic.png?ex=69b3a1c4&is=69b25044&hm=dcface5427862d440922451a6a5ccce6c18fc81cb80e7de7519176b3ee2bf7ea&")
 
 const row=new ActionRowBuilder().addComponents(
 
@@ -397,14 +430,10 @@ new ButtonBuilder()
 
 )
 
-msg.channel.send({
-embeds:[embed],
-components:[row]
-})
+msg.channel.send({embeds:[embed],components:[row]})
 
 }
 
 })
 
 client.login(process.env.TOKEN)
-
