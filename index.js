@@ -81,7 +81,6 @@ return embed
 /* WELCOME */
 
 client.on("guildMemberAdd",member=>{
-
 const channel=member.guild.channels.cache.get(WELCOME_CHANNEL)
 if(!channel) return
 
@@ -94,13 +93,11 @@ new EmbedBuilder()
 )
 
 channel.send({content:`Welcome ${member}`,embeds:[embed]})
-
 })
 
-/* TICKET PANEL COMMAND */
+/* TICKET PANEL */
 
 client.on("messageCreate",async msg=>{
-
 if(msg.author.bot) return
 
 if(msg.content==="!ticketpanel"){
@@ -117,16 +114,15 @@ new ButtonBuilder()
 )
 
 msg.channel.send({embeds:[embed],components:[row]})
-
 }
-
 })
 
-/* TICKET SYSTEM */
+/* INTERACTIONS */
 
 client.on("interactionCreate",async interaction=>{
-
 if(!interaction.isButton()) return
+
+/* CREATE TICKET */
 
 if(interaction.customId==="create_ticket"){
 
@@ -135,24 +131,11 @@ name:`ticket-${interaction.user.username}`,
 type:ChannelType.GuildText,
 parent:TICKET_CATEGORY,
 permissionOverwrites:[
-{
-id:interaction.guild.roles.everyone,
-deny:[PermissionsBitField.Flags.ViewChannel]
-},
-{
-id:interaction.user.id,
-allow:[PermissionsBitField.Flags.ViewChannel]
-},
-{
-id:MOD_ROLE,
-allow:[PermissionsBitField.Flags.ViewChannel]
-}
+{ id:interaction.guild.roles.everyone, deny:[PermissionsBitField.Flags.ViewChannel] },
+{ id:interaction.user.id, allow:[PermissionsBitField.Flags.ViewChannel] },
+{ id:MOD_ROLE, allow:[PermissionsBitField.Flags.ViewChannel] }
 ]
 })
-
-const embed=new EmbedBuilder()
-.setTitle("Support Ticket")
-.setDescription("Staff will assist you shortly.")
 
 const row=new ActionRowBuilder().addComponents(
 new ButtonBuilder()
@@ -161,70 +144,124 @@ new ButtonBuilder()
 .setStyle(ButtonStyle.Danger)
 )
 
-channel.send({content:`${interaction.user}`,embeds:[embed],components:[row]})
+channel.send({
+content:`${interaction.user}`,
+embeds:[new EmbedBuilder().setTitle("Support Ticket")],
+components:[row]
+})
 
-interaction.reply({content:"Ticket created",ephemeral:true})
-
+return interaction.reply({content:"Ticket created",ephemeral:true})
 }
 
+/* CLOSE TICKET */
+
 if(interaction.customId==="close_ticket"){
+if(!interaction.member.roles.cache.has(MOD_ROLE))
+return interaction.reply({content:"Staff only",ephemeral:true})
+
+return interaction.channel.delete()
+}
+
+/* REGISTER */
+
+if(interaction.customId==="register"){
+
+if(tournament.players.includes(interaction.user.id))
+return interaction.reply({content:"Already registered",ephemeral:true})
+
+tournament.players.push(interaction.user.id)
+saveJSON("./tournament.json",tournament)
+
+await interaction.reply({content:"Registered",ephemeral:true})
+
+if(tournament.players.length===tournament.max){
+createBracket(interaction.channel)
+}
+}
+
+/* UNREGISTER */
+
+if(interaction.customId==="unregister"){
+
+tournament.players=tournament.players.filter(p=>p!==interaction.user.id)
+saveJSON("./tournament.json",tournament)
+
+interaction.reply({content:"Unregistered",ephemeral:true})
+}
+
+/* PARTICIPANTS */
+
+if(interaction.customId==="participants"){
+
+let list=""
+
+for(let id of tournament.players){
+let u=await client.users.fetch(id)
+list+=`${u.username}\n`
+}
+
+interaction.reply({content:list||"None",ephemeral:true})
+}
+
+/* NEXT ROUND (FIXED) */
+
+if(interaction.customId==="next_round"){
 
 if(!interaction.member.roles.cache.has(MOD_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
-interaction.channel.delete()
+await interaction.deferReply({ephemeral:true})
 
+if(!tournament.qualified || tournament.qualified.length < 2){
+return interaction.editReply({content:"Not enough qualified players"})
 }
 
-})
+/* finals */
 
-/* REGISTER PANEL */
+if(tournament.qualified.length === 3){
 
-async function sendRegister(channel){
+let [f,s,t]=tournament.qualified
+
+let first=await client.users.fetch(f)
+let second=await client.users.fetch(s)
+let third=await client.users.fetch(t)
 
 const embed=addFooter(
 new EmbedBuilder()
-.setTitle("🏆 ShinTours Tournament")
-.setImage(REGISTER_IMG)
+.setTitle("🏆 Tournament Results")
+.setThumbnail(first.displayAvatarURL())
 .setDescription(`
-🌐 **Server:** ${tournament.server}
-🗺 **Map:** ${tournament.map}
-
-👥 **Players:** ${tournament.players.length}/${tournament.max}
-
-🎁 **Rewards**
-
-🥇 ${tournament.rewards[0]}
-🥈 ${tournament.rewards[1]}
-🥉 ${tournament.rewards[2]}
+🥇 **${first.username}** — ${tournament.rewards[0]}
+🥈 **${second.username}** — ${tournament.rewards[1]}
+🥉 **${third.username}** — ${tournament.rewards[2]}
 `)
 )
 
-const row=new ActionRowBuilder().addComponents(
+await interaction.channel.send({embeds:[embed]})
+return interaction.editReply({content:"Results announced"})
+}
 
-new ButtonBuilder()
-.setCustomId("register")
-.setLabel("Register")
-.setStyle(ButtonStyle.Success),
+/* safe pairing */
 
-new ButtonBuilder()
-.setCustomId("unregister")
-.setLabel("Unregister")
-.setStyle(ButtonStyle.Danger),
+let next=[...tournament.qualified]
+if(next.length%2!==0) next.pop()
 
-new ButtonBuilder()
-.setCustomId("participants")
-.setLabel("Participants")
-.setStyle(ButtonStyle.Secondary)
+tournament.players=next
+tournament.qualified=[]
+tournament.round++
 
-)
-
-let msg=await channel.send({embeds:[embed],components:[row]})
-
-tournament.messageId=msg.id
 saveJSON("./tournament.json",tournament)
 
+if(tournament.players.length<2){
+return interaction.editReply({content:"Not enough players"})
 }
+
+await createBracket(interaction.channel)
+
+return interaction.editReply({content:"Next round created"})
+}
+
+})
 
 /* CREATE BRACKET */
 
@@ -236,7 +273,6 @@ tournament.matches=[]
 tournament.qualified=[]
 
 for(let i=0;i<shuffled.length;i+=2){
-
 if(!shuffled[i+1]) break
 
 tournament.matches.push({
@@ -244,13 +280,10 @@ p1:shuffled[i],
 p2:shuffled[i+1],
 winner:null
 })
-
 }
 
 saveJSON("./tournament.json",tournament)
-
 sendBracket(channel)
-
 }
 
 /* SEND BRACKET */
@@ -261,16 +294,13 @@ let text=""
 
 for(const [i,m] of tournament.matches.entries()){
 
-let p1=(await client.users.fetch(m.p1)).username
-let p2=(await client.users.fetch(m.p2)).username
-
-let tick=""
-if(m.winner) tick=`${CHECK}`
+let p1=await client.users.fetch(m.p1)
+let p2=await client.users.fetch(m.p2)
 
 text+=`
-${tick}
+${m.winner?CHECK:""}
 Match ${i+1}
-${p1} ${VS} ${p2}
+${p1.username} ${VS} ${p2.username}
 
 `
 }
@@ -290,110 +320,7 @@ new EmbedBuilder()
 )
 
 channel.send({embeds:[embed],components:[row]})
-
 }
-
-/* BUTTON HANDLER */
-
-client.on("interactionCreate",async interaction=>{
-
-if(!interaction.isButton()) return
-
-/* REGISTER */
-
-if(interaction.customId==="register"){
-
-if(tournament.players.includes(interaction.user.id))
-return interaction.reply({content:"Already registered",ephemeral:true})
-
-tournament.players.push(interaction.user.id)
-
-saveJSON("./tournament.json",tournament)
-
-interaction.reply({content:"Registered",ephemeral:true})
-
-if(tournament.players.length===tournament.max){
-createBracket(interaction.channel)
-}
-
-}
-
-/* UNREGISTER */
-
-if(interaction.customId==="unregister"){
-
-tournament.players=tournament.players.filter(p=>p!==interaction.user.id)
-saveJSON("./tournament.json",tournament)
-
-interaction.reply({content:"Unregistered",ephemeral:true})
-
-}
-
-/* PARTICIPANTS */
-
-if(interaction.customId==="participants"){
-
-let list=""
-
-for(let id of tournament.players){
-let u=await client.users.fetch(id)
-list+=`${u.username}\n`
-}
-
-interaction.reply({content:list||"None",ephemeral:true})
-
-}
-
-/* NEXT ROUND */
-
-if(interaction.customId==="next_round"){
-
-if(!interaction.member.roles.cache.has(MOD_ROLE))
-return interaction.reply({content:"Staff only",ephemeral:true})
-
-if(tournament.qualified.length < 2){
-return interaction.reply({
-content:"Not enough qualified players",
-ephemeral:true
-})
-}
-
-if(tournament.qualified.length === 3){
-
-let first=await client.users.fetch(tournament.qualified[0])
-let second=await client.users.fetch(tournament.qualified[1])
-let third=await client.users.fetch(tournament.qualified[2])
-
-const embed=addFooter(
-new EmbedBuilder()
-.setTitle("🏆 Tournament Results")
-.setThumbnail(first.displayAvatarURL())
-.setDescription(`
-🥇 **${first.username}** — ${tournament.rewards[0]}
-
-🥈 **${second.username}** — ${tournament.rewards[1]}
-
-🥉 **${third.username}** — ${tournament.rewards[2]}
-`)
-)
-
-interaction.channel.send({embeds:[embed]})
-return
-}
-
-tournament.players=[...tournament.qualified]
-tournament.qualified=[]
-tournament.round++
-
-saveJSON("./tournament.json",tournament)
-
-createBracket(interaction.channel)
-
-interaction.reply({content:"Next round created",ephemeral:true})
-
-}
-
-})
 
 /* COMMANDS */
 
@@ -420,41 +347,7 @@ tournament.qualified=[]
 tournament.round=1
 
 saveJSON("./tournament.json",tournament)
-
 sendRegister(msg.channel)
-
-}
-
-if(cmd==="code"){
-
-let code=args[0]
-let p1=msg.mentions.users.first()
-let p2=msg.mentions.users.last()
-
-if(!code||!p1||!p2) return
-
-const embed=addFooter(
-new EmbedBuilder()
-.setTitle("🎮 Match Room")
-.setDescription(`
-🌐 **Server:** ${tournament.server}
-🗺 **Map:** ${tournament.map}
-
-${p1.username} ${VS} ${p2.username}
-
-Room Code
-\`\`\`
-${code}
-\`\`\`
-`)
-)
-
-p1.send({embeds:[embed]}).catch(()=>{})
-p2.send({embeds:[embed]}).catch(()=>{})
-
-let m=await msg.channel.send("Code sent")
-setTimeout(()=>m.delete().catch(()=>{}),1000)
-
 }
 
 if(cmd==="qual"){
@@ -462,7 +355,9 @@ if(cmd==="qual"){
 let user=msg.mentions.users.first()
 if(!user) return
 
+if(!tournament.qualified.includes(user.id)){
 tournament.qualified.push(user.id)
+}
 
 for(let m of tournament.matches){
 if(m.p1===user.id||m.p2===user.id){
@@ -472,33 +367,7 @@ m.winner=user.id
 
 saveJSON("./tournament.json",tournament)
 
-let m=await msg.channel.send(`${CHECK} ${user.username} qualified`)
-setTimeout(()=>m.delete().catch(()=>{}),1000)
-
 sendBracket(msg.channel)
-
-}
-
-if(cmd==="helpm"){
-
-const embed=addFooter(
-new EmbedBuilder()
-.setTitle("📜 Bot Commands")
-.setDescription(`
-!tour <players> <server> <map> <reward1> <reward2> <reward3>
-
-!code <roomcode> @p1 @p2
-
-!qual @player
-
-!ticketpanel
-
-!helpm
-`)
-)
-
-msg.channel.send({embeds:[embed]})
-
 }
 
 })
