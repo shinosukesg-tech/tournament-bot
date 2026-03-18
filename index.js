@@ -45,6 +45,7 @@ registerMsg:null
 })
 
 const STAFF_ROLE="1476446112675004640"
+const GUILD_ID="1427721501737619669"
 
 /* ================= CLIENT ================= */
 
@@ -91,17 +92,19 @@ new SlashCommandBuilder()
 
 const rest=new REST({version:"10"}).setToken(process.env.TOKEN)
 
+/* ================= READY ================= */
+
 client.once("ready",async ()=>{
 console.log(`Bot Ready as ${client.user.tag}`)
 
 try{
 await rest.put(
-Routes.applicationCommands(client.user.id),
+Routes.applicationGuildCommands(client.user.id, GUILD_ID),
 {body:commands.map(c=>c.toJSON())}
 )
-console.log("Slash commands registered")
+console.log("Slash commands registered instantly ✅")
 }catch(e){
-console.error(e)
+console.error("Slash error:",e)
 }
 })
 
@@ -161,7 +164,6 @@ tournament.matches.push({p1:arr[i],p2:arr[i+1],winner:null})
 }
 
 saveJSON("./tournament.json",tournament)
-
 sendBracket(channel)
 }
 
@@ -176,7 +178,7 @@ let p2=await client.users.fetch(m.p2).catch(()=>null)
 
 if(!p1||!p2) continue
 
-text+=`${m.winner?"✅":""} Match ${i+1}\n${p1.username} vs ${p2.username}\n\n`
+text+=`${m.winner?"<:check:1480513506871742575> ":""}Match ${i+1}\n${p1.username} vs ${p2.username}\n\n`
 }
 
 const row=new ActionRowBuilder().addComponents(
@@ -192,8 +194,6 @@ components:[row]
 /* ================= INTERACTIONS ================= */
 
 client.on("interactionCreate",async interaction=>{
-
-/* BUTTONS */
 
 if(interaction.isButton()){
 
@@ -225,19 +225,15 @@ interaction.reply({content:"Removed",ephemeral:true})
 }
 
 if(interaction.customId==="participants"){
-
 let list=""
-
 for(let id of tournament.players){
 let u=await client.users.fetch(id).catch(()=>null)
 if(u) list+=`${u.username}\n`
 }
-
 interaction.reply({content:list||"No players",ephemeral:true})
 }
 
 if(interaction.customId==="next"){
-
 if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
@@ -257,15 +253,14 @@ interaction.reply({content:"Next round started",ephemeral:true})
 
 }
 
-/* SLASH COMMANDS */
+/* ================= SLASH ================= */
 
 if(interaction.isChatInputCommand()){
 
-/* TOUR */
+if(!interaction.member?.roles?.cache?.has(STAFF_ROLE) && interaction.commandName!=="helpm")
+return interaction.reply({content:"Staff only",ephemeral:true})
 
 if(interaction.commandName==="tour"){
-if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
-return interaction.reply({content:"Staff only",ephemeral:true})
 
 tournament={
 players:[],
@@ -289,12 +284,7 @@ sendRegister(interaction.channel)
 interaction.reply({content:"Tournament created",ephemeral:true})
 }
 
-/* QUAL */
-
 if(interaction.commandName==="qual"){
-if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
-return interaction.reply({content:"Staff only",ephemeral:true})
-
 let user=interaction.options.getUser("player")
 
 if(!tournament.qualified.includes(user.id))
@@ -307,16 +297,10 @@ m.winner=user.id
 }
 
 saveJSON("./tournament.json",tournament)
-
 interaction.reply({content:`Qualified ${user.username}`,ephemeral:true})
 }
 
-/* CODE */
-
 if(interaction.commandName==="code"){
-if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
-return interaction.reply({content:"Staff only",ephemeral:true})
-
 let code=interaction.options.getString("code")
 let user=interaction.options.getUser("player")
 
@@ -333,12 +317,7 @@ if(p2) p2.send(`Room Code: ${code}`).catch(()=>{})
 interaction.reply({content:"Code sent",ephemeral:true})
 }
 
-/* DELM */
-
 if(interaction.commandName==="delm"){
-if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
-return interaction.reply({content:"Staff only",ephemeral:true})
-
 tournament={
 players:[],
 matches:[],
@@ -352,19 +331,16 @@ started:false
 }
 
 saveJSON("./tournament.json",tournament)
-
 interaction.reply({content:"Tournament deleted",ephemeral:true})
 }
-
-/* HELP */
 
 if(interaction.commandName==="helpm"){
 interaction.reply({
 content:`🏆 Commands:
-/tour - create tournament
-/qual - qualify player
-/code - send room code
-/delm - delete tournament`,
+/tour
+/qual
+/code
+/delm`,
 ephemeral:true
 })
 }
