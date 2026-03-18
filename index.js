@@ -19,6 +19,8 @@ Routes
 const {REST}=require("@discordjs/rest")
 const fs=require("fs")
 
+/* ================= UTILS ================= */
+
 function loadJSON(file,def){
 try{return JSON.parse(fs.readFileSync(file))}
 catch{return def}
@@ -26,6 +28,8 @@ catch{return def}
 function saveJSON(file,data){
 fs.writeFileSync(file,JSON.stringify(data,null,2))
 }
+
+/* ================= DATA ================= */
 
 let tournament=loadJSON("./tournament.json",{
 players:[],
@@ -42,6 +46,8 @@ registerMsg:null
 
 const STAFF_ROLE="1476446112675004640"
 
+/* ================= CLIENT ================= */
+
 const client=new Client({
 intents:[
 GatewayIntentBits.Guilds,
@@ -50,7 +56,7 @@ GatewayIntentBits.GuildMembers
 ]
 })
 
-/* ================= SLASH COMMAND REGISTER ================= */
+/* ================= SLASH COMMANDS ================= */
 
 const commands=[
 new SlashCommandBuilder()
@@ -86,12 +92,17 @@ new SlashCommandBuilder()
 const rest=new REST({version:"10"}).setToken(process.env.TOKEN)
 
 client.once("ready",async ()=>{
-console.log("Bot Ready")
+console.log(`Bot Ready as ${client.user.tag}`)
 
+try{
 await rest.put(
 Routes.applicationCommands(client.user.id),
-{body:commands}
+{body:commands.map(c=>c.toJSON())}
 )
+console.log("Slash commands registered")
+}catch(e){
+console.error(e)
+}
 })
 
 /* ================= REGISTER PANEL ================= */
@@ -101,24 +112,37 @@ async function sendRegister(channel){
 const embed=new EmbedBuilder()
 .setTitle("🏆 ShinTours Tournament")
 .setDescription(`
-🌐 ${tournament.server}
-🗺 ${tournament.map}
+🌐 ${tournament.server || "N/A"}
+🗺 ${tournament.map || "N/A"}
 
 👥 ${tournament.players.length}/${tournament.max}
 
-🥇 ${tournament.rewards[0]}
-🥈 ${tournament.rewards[1]}
-🥉 ${tournament.rewards[2]}
+🥇 ${tournament.rewards[0] || "-"}
+🥈 ${tournament.rewards[1] || "-"}
+🥉 ${tournament.rewards[2] || "-"}
 `)
 
 const row=new ActionRowBuilder().addComponents(
 new ButtonBuilder().setCustomId("register").setLabel("Register").setStyle(ButtonStyle.Success),
-new ButtonBuilder().setCustomId("unregister").setLabel("Unregister").setStyle(ButtonStyle.Danger)
+new ButtonBuilder().setCustomId("unregister").setLabel("Unregister").setStyle(ButtonStyle.Danger),
+new ButtonBuilder().setCustomId("participants").setLabel("Participants").setStyle(ButtonStyle.Secondary)
 )
 
 let msg=await channel.send({embeds:[embed],components:[row]})
 tournament.registerMsg=msg.id
 saveJSON("./tournament.json",tournament)
+}
+
+async function updateRegister(channel){
+if(!tournament.registerMsg) return
+let msg=await channel.messages.fetch(tournament.registerMsg).catch(()=>null)
+if(!msg) return
+
+const embed=new EmbedBuilder()
+.setTitle("🏆 ShinTours Tournament")
+.setDescription(`👥 ${tournament.players.length}/${tournament.max}`)
+
+msg.edit({embeds:[embed]})
 }
 
 /* ================= BRACKET ================= */
@@ -138,13 +162,21 @@ tournament.matches.push({p1:arr[i],p2:arr[i+1],winner:null})
 
 saveJSON("./tournament.json",tournament)
 
+sendBracket(channel)
+}
+
+async function sendBracket(channel){
+
 let text=""
 
 for(const [i,m] of tournament.matches.entries()){
-let p1=await client.users.fetch(m.p1)
-let p2=await client.users.fetch(m.p2)
 
-text+=`Match ${i+1}\n${p1.username} vs ${p2.username}\n\n`
+let p1=await client.users.fetch(m.p1).catch(()=>null)
+let p2=await client.users.fetch(m.p2).catch(()=>null)
+
+if(!p1||!p2) continue
+
+text+=`${m.winner?"✅":""} Match ${i+1}\n${p1.username} vs ${p2.username}\n\n`
 }
 
 const row=new ActionRowBuilder().addComponents(
@@ -152,7 +184,7 @@ new ButtonBuilder().setCustomId("next").setLabel("Next Round").setStyle(ButtonSt
 )
 
 await channel.send({
-embeds:[new EmbedBuilder().setTitle(`Round ${tournament.round}`).setDescription(text)],
+embeds:[new EmbedBuilder().setTitle(`Round ${tournament.round}`).setDescription(text||"No matches")],
 components:[row]
 })
 }
@@ -174,6 +206,8 @@ tournament.players.push(interaction.user.id)
 saveJSON("./tournament.json",tournament)
 }
 
+updateRegister(interaction.channel)
+
 interaction.reply({content:"Joined",ephemeral:true})
 
 if(tournament.players.length===tournament.max){
@@ -184,11 +218,27 @@ createBracket(interaction.channel)
 if(interaction.customId==="unregister"){
 tournament.players=tournament.players.filter(p=>p!==interaction.user.id)
 saveJSON("./tournament.json",tournament)
+
+updateRegister(interaction.channel)
+
 interaction.reply({content:"Removed",ephemeral:true})
 }
 
+if(interaction.customId==="participants"){
+
+let list=""
+
+for(let id of tournament.players){
+let u=await client.users.fetch(id).catch(()=>null)
+if(u) list+=`${u.username}\n`
+}
+
+interaction.reply({content:list||"No players",ephemeral:true})
+}
+
 if(interaction.customId==="next"){
-if(!interaction.member.roles.cache.has(STAFF_ROLE))
+
+if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
 if(tournament.qualified.length<2)
@@ -199,10 +249,12 @@ tournament.qualified=[]
 tournament.round++
 
 saveJSON("./tournament.json",tournament)
+
 createBracket(interaction.channel)
 
-interaction.reply({content:"Next round",ephemeral:true})
+interaction.reply({content:"Next round started",ephemeral:true})
 }
+
 }
 
 /* SLASH COMMANDS */
@@ -212,7 +264,7 @@ if(interaction.isChatInputCommand()){
 /* TOUR */
 
 if(interaction.commandName==="tour"){
-if(!interaction.member.roles.cache.has(STAFF_ROLE))
+if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
 tournament={
@@ -240,7 +292,7 @@ interaction.reply({content:"Tournament created",ephemeral:true})
 /* QUAL */
 
 if(interaction.commandName==="qual"){
-if(!interaction.member.roles.cache.has(STAFF_ROLE))
+if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
 let user=interaction.options.getUser("player")
@@ -262,7 +314,7 @@ interaction.reply({content:`Qualified ${user.username}`,ephemeral:true})
 /* CODE */
 
 if(interaction.commandName==="code"){
-if(!interaction.member.roles.cache.has(STAFF_ROLE))
+if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
 let code=interaction.options.getString("code")
@@ -272,11 +324,11 @@ let match=tournament.matches.find(m=>m.p1===user.id||m.p2===user.id)
 if(!match)
 return interaction.reply({content:"Match not found",ephemeral:true})
 
-let p1=await client.users.fetch(match.p1)
-let p2=await client.users.fetch(match.p2)
+let p1=await client.users.fetch(match.p1).catch(()=>null)
+let p2=await client.users.fetch(match.p2).catch(()=>null)
 
-p1.send(`Room Code: ${code}`).catch(()=>{})
-p2.send(`Room Code: ${code}`).catch(()=>{})
+if(p1) p1.send(`Room Code: ${code}`).catch(()=>{})
+if(p2) p2.send(`Room Code: ${code}`).catch(()=>{})
 
 interaction.reply({content:"Code sent",ephemeral:true})
 }
@@ -284,7 +336,7 @@ interaction.reply({content:"Code sent",ephemeral:true})
 /* DELM */
 
 if(interaction.commandName==="delm"){
-if(!interaction.member.roles.cache.has(STAFF_ROLE))
+if(!interaction.member?.roles?.cache?.has(STAFF_ROLE))
 return interaction.reply({content:"Staff only",ephemeral:true})
 
 tournament={
@@ -308,13 +360,11 @@ interaction.reply({content:"Tournament deleted",ephemeral:true})
 
 if(interaction.commandName==="helpm"){
 interaction.reply({
-content:`
-🏆 Commands:
+content:`🏆 Commands:
 /tour - create tournament
 /qual - qualify player
 /code - send room code
-/delm - delete tournament
-`,
+/delm - delete tournament`,
 ephemeral:true
 })
 }
