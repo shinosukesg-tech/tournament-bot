@@ -22,7 +22,7 @@ const fs=require("fs")
 /* ================= CONFIG ================= */
 
 const STAFF_ROLE="1476446112675004640"
-const GUILD_ID="1427721501737619669"
+const GUILD_ID="947185082643415140" // ✅ FIXED
 
 const REGISTER_IMG="https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png"
 const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
@@ -68,12 +68,12 @@ const commands=[
 new SlashCommandBuilder()
 .setName("tour")
 .setDescription("Create tournament")
-.addIntegerOption(o=>o.setName("p").setRequired(true))
-.addStringOption(o=>o.setName("s").setRequired(true))
-.addStringOption(o=>o.setName("m").setRequired(true))
-.addStringOption(o=>o.setName("p1"))
-.addStringOption(o=>o.setName("p2"))
-.addStringOption(o=>o.setName("p3")),
+.addIntegerOption(o=>o.setName("p").setDescription("Players").setRequired(true))
+.addStringOption(o=>o.setName("s").setDescription("Server").setRequired(true))
+.addStringOption(o=>o.setName("m").setDescription("Map").setRequired(true))
+.addStringOption(o=>o.setName("p1").setDescription("First Prize"))
+.addStringOption(o=>o.setName("p2").setDescription("Second Prize"))
+.addStringOption(o=>o.setName("p3").setDescription("Third Prize")),
 
 new SlashCommandBuilder()
 .setName("qual")
@@ -100,11 +100,19 @@ client.once("ready",async ()=>{
 console.log(`Logged in as ${client.user.tag}`)
 
 try{
+// CLEAR OLD
+await rest.put(
+Routes.applicationGuildCommands(client.user.id,GUILD_ID),
+{body:[]}
+)
+
+// REGISTER NEW
 await rest.put(
 Routes.applicationGuildCommands(client.user.id,GUILD_ID),
 {body:commands.map(c=>c.toJSON())}
 )
-console.log("Commands ready ✅")
+
+console.log("Commands refreshed ✅")
 }catch(e){console.log(e)}
 })
 
@@ -133,7 +141,7 @@ new ButtonBuilder().setCustomId("players").setLabel(`Players: ${tournament.playe
 new ButtonBuilder().setCustomId("start").setLabel("Start").setStyle(ButtonStyle.Danger).setDisabled(tournament.started)
 )
 
-let msg = null
+let msg=null
 
 if(tournament.msgId){
 msg=await channel.messages.fetch(tournament.msgId).catch(()=>null)
@@ -165,7 +173,6 @@ tournament.matches.push({p1:arr[i],p2:arr[i+1]})
 }
 
 saveJSON("./tournament.json",tournament)
-
 sendBracket(channel)
 }
 
@@ -177,7 +184,6 @@ if(!msg) return
 let text=""
 
 for(const [i,m] of tournament.matches.entries()){
-
 let p1=await client.users.fetch(m.p1).catch(()=>null)
 let p2=await client.users.fetch(m.p2).catch(()=>null)
 
@@ -190,7 +196,7 @@ await msg.edit({
 embeds:[
 new EmbedBuilder()
 .setTitle(`🏆 Round ${tournament.round}`)
-.setDescription(text)
+.setDescription(text || "No matches")
 .setImage(BRACKET_IMG)
 ]
 })
@@ -202,8 +208,6 @@ client.on("interactionCreate",async interaction=>{
 try{
 
 if(interaction.isButton()){
-
-/* REGISTER */
 
 if(interaction.customId==="register"){
 
@@ -230,12 +234,14 @@ ephemeral:true
 await renderPanel(interaction.channel)
 
 if(tournament.players.length===tournament.max){
-setTimeout(()=>createBracket(interaction.channel),5000)
+setTimeout(()=>{
+if(!tournament.started){
+createBracket(interaction.channel)
+}
+},5000)
 }
 
 }
-
-/* UNREGISTER */
 
 if(interaction.customId==="confirm_unreg"){
 
@@ -246,8 +252,6 @@ await interaction.update({content:"<:sg_cross:1480513567655592037> Unregistered"
 
 renderPanel(interaction.channel)
 }
-
-/* START */
 
 if(interaction.customId==="start"){
 
@@ -264,7 +268,7 @@ await interaction.reply({content:"Started",ephemeral:true})
 
 if(interaction.isChatInputCommand()){
 
-await interaction.deferReply({ephemeral:true})
+await interaction.deferReply({ephemeral:true}).catch(()=>{})
 
 if(interaction.commandName==="tour"){
 
@@ -286,13 +290,10 @@ msgId:null
 }
 
 saveJSON("./tournament.json",tournament)
-
 await renderPanel(interaction.channel)
 
-return interaction.editReply("Panel created")
+return interaction.editReply("✅ Panel created")
 }
-
-/* QUAL */
 
 if(interaction.commandName==="qual"){
 
@@ -300,8 +301,6 @@ const user=interaction.options.getUser("player")
 
 if(!tournament.qualified.includes(user.id))
 tournament.qualified.push(user.id)
-
-/* NEXT ROUND */
 
 if(tournament.qualified.length===tournament.matches.length){
 
@@ -316,8 +315,6 @@ createBracket(interaction.channel)
 
 return interaction.editReply(`<:check:1480513506871742575> ${user.username}`)
 }
-
-/* CODE */
 
 if(interaction.commandName==="code"){
 
@@ -338,10 +335,8 @@ Room Code:
 p1.send(msg).catch(()=>{})
 p2.send(msg).catch(()=>{})
 
-return interaction.editReply("Sent")
+return interaction.editReply("📩 Sent")
 }
-
-/* DELETE */
 
 if(interaction.commandName==="delm"){
 tournament={players:[],matches:[],qualified:[],round:1,max:0}
