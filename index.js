@@ -11,12 +11,9 @@ GatewayIntentBits,
 EmbedBuilder,
 ActionRowBuilder,
 ButtonBuilder,
-ButtonStyle,
-SlashCommandBuilder,
-Routes
+ButtonStyle
 }=require("discord.js")
 
-const {REST}=require("@discordjs/rest")
 const fs=require("fs")
 
 /* ================= CONFIG ================= */
@@ -57,63 +54,9 @@ const client=new Client({
 intents:[
 GatewayIntentBits.Guilds,
 GatewayIntentBits.GuildMessages,
-GatewayIntentBits.GuildMembers
+GatewayIntentBits.GuildMembers,
+GatewayIntentBits.MessageContent // ✅ Added for prefix commands
 ]
-})
-
-/* ================= COMMANDS ================= */
-
-const commands=[
-
-new SlashCommandBuilder()
-.setName("tour")
-.setDescription("Create tournament")
-.addIntegerOption(o=>o.setName("p").setDescription("Players").setRequired(true))
-.addStringOption(o=>o.setName("s").setDescription("Server").setRequired(true))
-.addStringOption(o=>o.setName("m").setDescription("Map").setRequired(true))
-.addStringOption(o=>o.setName("p1").setDescription("First Prize"))
-.addStringOption(o=>o.setName("p2").setDescription("Second Prize"))
-.addStringOption(o=>o.setName("p3").setDescription("Third Prize")),
-
-new SlashCommandBuilder()
-.setName("qual")
-.setDescription("Qualify player")
-.addUserOption(o=>o.setName("player").setRequired(true)),
-
-new SlashCommandBuilder()
-.setName("code")
-.setDescription("Send room code")
-.addUserOption(o=>o.setName("p1").setRequired(true))
-.addUserOption(o=>o.setName("p2").setRequired(true))
-.addStringOption(o=>o.setName("code").setRequired(true)),
-
-new SlashCommandBuilder()
-.setName("delm").setDescription("Delete tournament")
-
-]
-
-const rest=new REST({version:"10"}).setToken(process.env.TOKEN)
-
-/* ================= READY ================= */
-
-client.once("ready",async ()=>{
-console.log(`Logged in as ${client.user.tag}`)
-
-try{
-// CLEAR OLD
-await rest.put(
-Routes.applicationGuildCommands(client.user.id,GUILD_ID),
-{body:[]}
-)
-
-// REGISTER NEW
-await rest.put(
-Routes.applicationGuildCommands(client.user.id,GUILD_ID),
-{body:commands.map(c=>c.toJSON())}
-)
-
-console.log("Commands refreshed ✅")
-}catch(e){console.log(e)}
 })
 
 /* ================= PANEL ================= */
@@ -264,65 +207,108 @@ await interaction.reply({content:"Started",ephemeral:true})
 
 }
 
-/* ================= SLASH ================= */
+}catch(err){
+console.log(err)
+if(!interaction.replied){
+interaction.reply({content:"Error",ephemeral:true}).catch(()=>{})
+}
+}
+})
 
-if(interaction.isChatInputCommand()){
+/* ================= PREFIX COMMANDS ================= */
 
-await interaction.deferReply({ephemeral:true}).catch(()=>{})
+client.on("messageCreate", async message => {
+if(message.author.bot) return
+if(!message.content.startsWith("!")) return
 
-if(interaction.commandName==="tour"){
-
-tournament={
-players:[],
-matches:[],
-qualified:[],
-round:1,
-max:interaction.options.getInteger("p"),
-server:interaction.options.getString("s"),
-map:interaction.options.getString("m"),
-rewards:[
-interaction.options.getString("p1"),
-interaction.options.getString("p2"),
-interaction.options.getString("p3")
-],
-started:false,
-msgId:null
+// Auto delete non-bot messages (except commands)
+if(!message.content.startsWith("!")) {
+setTimeout(()=>message.delete().catch(()=>{}),1000)
+return
 }
 
-saveJSON("./tournament.json",tournament)
-await renderPanel(interaction.channel)
+const args = message.content.slice(1).trim().split(/ +/)
+const command = args.shift().toLowerCase()
 
-return interaction.editReply("✅ Panel created")
-}
+try {
+    // !tour <players> <server> <map> [p1] [p2] [p3]
+    if(command === "tour") {
+        if(!message.member.roles.cache.has(STAFF_ROLE)) {
+            return message.reply({content: "Staff only", ephemeral: true}).catch(()=>{})
+        }
+        
+        if(args.length < 3) {
+            return message.reply("Usage: `!tour <players> <server> <map> [p1] [p2] [p3]`").catch(()=>{})
+        }
 
-if(interaction.commandName==="qual"){
+        const max = parseInt(args[0])
+        if(isNaN(max)) return message.reply("Invalid player count").catch(()=>{})
 
-const user=interaction.options.getUser("player")
+        tournament={
+            players:[],
+            matches:[],
+            qualified:[],
+            round:1,
+            max:max,
+            server:args[1],
+            map:args[2],
+            rewards:[
+                args[3] || "",
+                args[4] || "",
+                args[5] || ""
+            ],
+            started:false,
+            msgId:null
+        }
 
-if(!tournament.qualified.includes(user.id))
-tournament.qualified.push(user.id)
+        saveJSON("./tournament.json",tournament)
+        await renderPanel(message.channel)
+        return message.reply("✅ Panel created").catch(()=>{})
+    }
 
-if(tournament.qualified.length===tournament.matches.length){
+    // !qual <@user>
+    if(command === "qual") {
+        if(!message.member.roles.cache.has(STAFF_ROLE)) {
+            return message.reply({content: "Staff only", ephemeral: true}).catch(()=>{})
+        }
 
-tournament.players=[...tournament.qualified]
-tournament.qualified=[]
-tournament.round++
+        const user = message.mentions.users.first()
+        if(!user) return message.reply("Mention a user").catch(()=>{})
 
-saveJSON("./tournament.json",tournament)
+        if(!tournament.qualified.includes(user.id))
+            tournament.qualified.push(user.id)
 
-createBracket(interaction.channel)
-}
+        if(tournament.qualified.length===tournament.matches.length){
 
-return interaction.editReply(`<:check:1480513506871742575> ${user.username}`)
-}
+            tournament.players=[...tournament.qualified]
+            tournament.qualified=[]
+            tournament.round++
 
-if(interaction.commandName==="code"){
+            saveJSON("./tournament.json",tournament)
 
-const p1=interaction.options.getUser("p1")
-const p2=interaction.options.getUser("p2")
-const code=interaction.options.getString("code")
+            createBracket(message.channel)
+        }
 
-const msg=`
+        return message.reply(`<:check:1480513506871742575> ${user.username}`).catch(()=>{})
+    }
+
+    // !code <@p1> <@p2> <code>
+    if(command === "code") {
+        if(!message.member.roles.cache.has(STAFF_ROLE)) {
+            return message.reply({content: "Staff only", ephemeral: true}).catch(()=>{})
+        }
+
+        if(args.length < 3) {
+            return message.reply("Usage: `!code <@p1> <@p2> <code>`").catch(()=>{})
+        }
+
+        const p1 = message.mentions.users.first()
+        const p2 = message.mentions.users.last()
+        const code = args.slice(2).join(" ")
+
+        if(!p1 || !p2) return message.reply("Mention 2 players").catch(()=>{})
+
+        const msgContent = `
 🎮 MATCH ROOM DETAILS
 
 Room Code:
@@ -332,34 +318,35 @@ Room Code:
 🗺 ${tournament.map}
 `
 
-p1.send(msg).catch(()=>{})
-p2.send(msg).catch(()=>{})
+        p1.send(msgContent).catch(()=>{})
+        p2.send(msgContent).catch(()=>{})
 
-return interaction.editReply("📩 Sent")
-}
+        return message.reply("📩 Sent").catch(()=>{})
+    }
 
-if(interaction.commandName==="delm"){
-tournament={players:[],matches:[],qualified:[],round:1,max:0}
-saveJSON("./tournament.json",tournament)
+    // !delm
+    if(command === "delm") {
+        if(!message.member.roles.cache.has(STAFF_ROLE)) {
+            return message.reply({content: "Staff only", ephemeral: true}).catch(()=>{})
+        }
 
-return interaction.editReply("Deleted")
-}
+        tournament={players:[],matches:[],qualified:[],round:1,max:0}
+        saveJSON("./tournament.json",tournament)
 
-}
+        return message.reply("Deleted").catch(()=>{})
+    }
 
-}catch(err){
-console.log(err)
-if(!interaction.replied){
-interaction.reply({content:"Error",ephemeral:true}).catch(()=>{})
-}
+} catch(err) {
+    console.log(err)
+    message.reply("Error").catch(()=>{})
 }
 })
 
-/* ================= AUTO DELETE ================= */
+/* ================= READY ================= */
 
-client.on("messageCreate",msg=>{
-if(msg.author.bot) return
-setTimeout(()=>msg.delete().catch(()=>{}),1000)
+client.once("ready",()=>{
+console.log(`Logged in as ${client.user.tag}`)
+console.log("✅ Prefix commands ready!")
 })
 
 client.login(process.env.TOKEN)
