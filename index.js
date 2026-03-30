@@ -18,8 +18,9 @@ const fs=require("fs")
 
 /* ================= CONFIG ================= */
 
-const STAFF_ROLE="1476446112675004640"
-const GUILD_ID="947185082643415140" // ✅ FIXED
+const TOURNAMENT_ORGANISER_ROLE = "1485872542391730186"  // Can create tournaments
+const TOURNAMENT_STAFF_ROLE = "1485872228917575800"     // Can manage tournaments
+const GUILD_ID="947185082643415140"
 
 const REGISTER_IMG="https://media.discordapp.net/attachments/1343286197346111558/1351125238611705897/Screenshot_1.png"
 const BRACKET_IMG="https://cdn.discordapp.com/attachments/1471952333209604239/1480910254999994419/1000126239.png"
@@ -55,9 +56,23 @@ intents:[
 GatewayIntentBits.Guilds,
 GatewayIntentBits.GuildMessages,
 GatewayIntentBits.GuildMembers,
-GatewayIntentBits.MessageContent // ✅ Added for prefix commands
+GatewayIntentBits.MessageContent
 ]
 })
+
+/* ================= HELPERS ================= */
+
+function hasTournamentOrganiserRole(member) {
+    return member.roles.cache.has(TOURNAMENT_ORGANISER_ROLE)
+}
+
+function hasTournamentStaffRole(member) {
+    return member.roles.cache.has(TOURNAMENT_STAFF_ROLE)
+}
+
+function hasTournamentManagementRole(member) {
+    return hasTournamentOrganiserRole(member) || hasTournamentStaffRole(member)
+}
 
 /* ================= PANEL ================= */
 
@@ -198,8 +213,8 @@ renderPanel(interaction.channel)
 
 if(interaction.customId==="start"){
 
-if(!interaction.member.roles.cache.has(STAFF_ROLE))
-return interaction.reply({content:"Staff only",ephemeral:true})
+if(!hasTournamentManagementRole(interaction.member))
+return interaction.reply({content:"Tournament Staff/Organiser only",ephemeral:true})
 
 createBracket(interaction.channel)
 await interaction.reply({content:"Started",ephemeral:true})
@@ -221,7 +236,7 @@ client.on("messageCreate", async message => {
 if(message.author.bot) return
 if(!message.content.startsWith("!")) return
 
-// Auto delete non-bot messages (except commands)
+// Auto delete non-bot, non-command messages
 if(!message.content.startsWith("!")) {
 setTimeout(()=>message.delete().catch(()=>{}),1000)
 return
@@ -232,17 +247,20 @@ const command = args.shift().toLowerCase()
 
 try {
     // !tour <players> <server> <map> [p1] [p2] [p3]
+    // Tournament Organiser ONLY
     if(command === "tour") {
-        if(!message.member.roles.cache.has(STAFF_ROLE)) {
-            return message.reply({content: "Staff only", ephemeral: true}).catch(()=>{})
+        if(!hasTournamentOrganiserRole(message.member)) {
+            return message.reply("❌ **Tournament Organiser role required**").catch(()=>{})
         }
         
         if(args.length < 3) {
-            return message.reply("Usage: `!tour <players> <server> <map> [p1] [p2] [p3]`").catch(()=>{})
+            return message.reply("**Usage:** `!tour <players> <server> <map> [p1] [p2] [p3]`\n**Example:** `!tour 16 EU map1 \"1st Prize\" \"2nd Prize\" \"3rd Prize`").catch(()=>{})
         }
 
         const max = parseInt(args[0])
-        if(isNaN(max)) return message.reply("Invalid player count").catch(()=>{})
+        if(isNaN(max) || max <= 0) {
+            return message.reply("❌ Invalid player count").catch(()=>{})
+        }
 
         tournament={
             players:[],
@@ -263,17 +281,20 @@ try {
 
         saveJSON("./tournament.json",tournament)
         await renderPanel(message.channel)
-        return message.reply("✅ Panel created").catch(()=>{})
+        return message.reply(`✅ **Tournament created!** (${max} players)`).catch(()=>{})
     }
 
     // !qual <@user>
+    // Tournament Staff/Organiser
     if(command === "qual") {
-        if(!message.member.roles.cache.has(STAFF_ROLE)) {
-            return message.reply({content: "Staff only", ephemeral: true}).catch(()=>{})
+        if(!hasTournamentManagementRole(message.member)) {
+            return message.reply("❌ **Tournament Staff/Organiser role required**").catch(()=>{})
         }
 
         const user = message.mentions.users.first()
-        if(!user) return message.reply("Mention a user").catch(()=>{})
+        if(!user) {
+            return message.reply("❌ **Mention a user**\n**Usage:** `!qual @user`").catch(()=>{})
+        }
 
         if(!tournament.qualified.includes(user.id))
             tournament.qualified.push(user.id)
@@ -289,64 +310,69 @@ try {
             createBracket(message.channel)
         }
 
-        return message.reply(`<:check:1480513506871742575> ${user.username}`).catch(()=>{})
+        return message.reply(`✅ **${user.username} qualified!**`).catch(()=>{})
     }
 
     // !code <@p1> <@p2> <code>
+    // Tournament Staff/Organiser
     if(command === "code") {
-        if(!message.member.roles.cache.has(STAFF_ROLE)) {
-            return message.reply({content: "Staff only", ephemeral: true}).catch(()=>{})
+        if(!hasTournamentManagementRole(message.member)) {
+            return message.reply("❌ **Tournament Staff/Organiser role required**").catch(()=>{})
         }
 
         if(args.length < 3) {
-            return message.reply("Usage: `!code <@p1> <@p2> <code>`").catch(()=>{})
+            return message.reply("**Usage:** `!code @player1 @player2 ROOM123`\n**Example:** `!code @user1 @user2 ABC123`").catch(()=>{})
         }
 
         const p1 = message.mentions.users.first()
         const p2 = message.mentions.users.last()
         const code = args.slice(2).join(" ")
 
-        if(!p1 || !p2) return message.reply("Mention 2 players").catch(()=>{})
+        if(!p1 || !p2 || p1.id === p2.id) {
+            return message.reply("❌ **Mention 2 different players**").catch(()=>{})
+        }
 
         const msgContent = `
-🎮 MATCH ROOM DETAILS
+🎮 **MATCH ROOM DETAILS**
 
-Room Code:
+**Room Code:**
 \`\`\`${code}\`\`\`
 
-🌐 ${tournament.server}
-🗺 ${tournament.map}
+🌐 **${tournament.server}**
+🗺 **${tournament.map}**
 `
 
         p1.send(msgContent).catch(()=>{})
         p2.send(msgContent).catch(()=>{})
 
-        return message.reply("📩 Sent").catch(()=>{})
+        return message.reply(`📩 **Room code sent to ${p1.username} & ${p2.username}**`).catch(()=>{})
     }
 
     // !delm
+    // Tournament Staff/Organiser
     if(command === "delm") {
-        if(!message.member.roles.cache.has(STAFF_ROLE)) {
-            return message.reply({content: "Staff only", ephemeral: true}).catch(()=>{})
+        if(!hasTournamentManagementRole(message.member)) {
+            return message.reply("❌ **Tournament Staff/Organiser role required**").catch(()=>{})
         }
 
-        tournament={players:[],matches:[],qualified:[],round:1,max:0}
+        tournament={players:[],matches:[],qualified:[],round:1,max:0,server:"",map:"",rewards:[],started:false,msgId:null}
         saveJSON("./tournament.json",tournament)
 
-        return message.reply("Deleted").catch(()=>{})
+        return message.reply("🗑️ **Tournament deleted!**").catch(()=>{})
     }
 
 } catch(err) {
-    console.log(err)
-    message.reply("Error").catch(()=>{})
+    console.error(err)
+    message.reply("❌ **An error occurred!**").catch(()=>{})
 }
 })
 
 /* ================= READY ================= */
 
 client.once("ready",()=>{
-console.log(`Logged in as ${client.user.tag}`)
-console.log("✅ Prefix commands ready!")
+console.log(`✅ Logged in as ${client.user.tag}`)
+console.log(`✅ Tournament Organiser: ${TOURNAMENT_ORGANISER_ROLE}`)
+console.log(`✅ Tournament Staff: ${TOURNAMENT_STAFF_ROLE}`)
 })
 
 client.login(process.env.TOKEN)
